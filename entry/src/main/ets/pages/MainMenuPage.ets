@@ -69,6 +69,21 @@ struct MainMenuPage {
 
         Blank()
 
+        Button('🏆')
+          .fontSize(20)
+          .width(45)
+          .height(45)
+          .backgroundColor('rgba(255,215,0,0.2)')
+          .fontColor('#FFD700')
+          .margin({ right: 10 })
+          .onClick(() => {
+            try {
+              router.pushUrl({ url: 'pages/LeaderboardPage' });
+            } catch (e) {
+              console.error('Router push error:', e);
+            }
+          })
+
         Button('←')
           .fontSize(24)
           .width(45)

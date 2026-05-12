@@ -2,6 +2,7 @@ import { networkManager, MessageData, SendData } from '../utils/NetworkManager';
 import { gameManager, GamePlayer, GameManagerState } from '../utils/GameManager';
 import { MahjongRules, MahjongTile } from '../engine/MahjongRules';
 import { AdvancedAI, AIDifficulty, AIDecision } from '../ai/AdvancedAI';
+import { statisticsManager } from '../utils/StatisticsManager';
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 
@@ -17,6 +18,11 @@ struct GamePage {
   @State currentTileInfo: MahjongTile | null = null;
   @State gameMessage: string = '';
   @State showGameOver: boolean = false;
+  @State gameOverWinner: string = '';
+  @State gameOverScores: Record<string, number> = {};
+  @State showAnimation: boolean = false;
+  @State animationText: string = '';
+  @State animationColor: string = '#4CAF50';
   
   private unsubscribe: () => void = () => {};
   private aiPlayers: Map<number, AdvancedAI> = new Map();
@@ -38,36 +44,120 @@ struct GamePage {
   }
 
   build() {
-    Row() {
-      // 左侧玩家信息面板
-      Column() {
-        this.buildPlayerPanel()
-      }
-      .width('20%')
-      .height('100%')
-      .backgroundColor('rgba(0,0,0,0.2)')
-      .padding(15)
+    Stack() {
+      Row() {
+        // 左侧玩家信息面板
+        Column() {
+          this.buildPlayerPanel()
+        }
+        .width('20%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.2)')
+        .padding(15)
 
-      // 中间游戏区域
-      Column() {
-        this.buildGameArea()
+        // 中间游戏区域
+        Column() {
+          this.buildGameArea()
+        }
+        .width('60%')
+        .height('100%')
+        .backgroundColor('#1a1a2e')
+
+        // 右侧操作面板
+        Column() {
+          this.buildControlPanel()
+        }
+        .width('20%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.2)')
+        .padding(15)
       }
-      .width('60%')
+      .width('100%')
       .height('100%')
       .backgroundColor('#1a1a2e')
 
-      // 右侧操作面板
-      Column() {
-        this.buildControlPanel()
+      // 动画效果层
+      if (this.showAnimation) {
+        Column() {
+          Text(this.animationText)
+            .fontSize(48)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.animationColor)
+            .shadow({ radius: 10, color: '#000' })
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor('rgba(0,0,0,0.3)')
+        .onClick(() => {
+          this.showAnimation = false;
+        })
       }
-      .width('20%')
-      .height('100%')
-      .backgroundColor('rgba(0,0,0,0.2)')
-      .padding(15)
+
+      // 游戏结束弹窗
+      if (this.showGameOver) {
+        Column() {
+          Text('🎉 游戏结束 🎉')
+            .fontSize(32)
+            .fontWeight(FontWeight.Bold)
+            .fontColor('#FFD700')
+            .margin({ bottom: 20 })
+
+          Text(`获胜者: ${this.gameOverWinner}`)
+            .fontSize(24)
+            .fontColor('#fff')
+            .margin({ bottom: 20 })
+
+          Column() {
+            Text('最终得分')
+              .fontSize(18)
+              .fontColor('#ffffffcc')
+              .margin({ bottom: 10 })
+
+            ForEach(Object.entries(this.gameOverScores), (entry: [string, number]) => {
+              Row() {
+                Text(entry[0])
+                  .fontSize(16)
+                  .fontColor('#fff')
+                  .width(100)
+                Text(`${entry[1] > 0 ? '+' : ''}${entry[1]}`)
+                  .fontSize(16)
+                  .fontColor(entry[1] > 0 ? '#4CAF50' : '#f44336')
+                  .fontWeight(FontWeight.Bold)
+              }
+              .width('80%')
+              .justifyContent(FlexAlign.SpaceBetween)
+              .padding(8)
+              .margin({ bottom: 5 })
+            }, (entry: [string, number]) => entry[0])
+          }
+          .width('90%')
+          .padding(15)
+          .backgroundColor('rgba(255,255,255,0.1)')
+          .borderRadius(10)
+          .margin({ bottom: 20 })
+
+          Button('返回大厅')
+            .width('60%')
+            .height(50)
+            .fontSize(18)
+            .backgroundColor('#4CAF50')
+            .fontColor('#fff')
+            .borderRadius(25)
+            .onClick(() => {
+              this.returnToLobby();
+            })
+        }
+        .width('80%')
+        .padding(30)
+        .backgroundColor('rgba(26,26,46,0.95)')
+        .borderRadius(20)
+        .border({ width: 2, color: '#FFD700' })
+      }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#1a1a2e')
   }
 
   @Builder
@@ -504,6 +594,7 @@ struct GamePage {
     const newHand = [...this.gameState.myHand, tile];
     gameManager.updateMyHand(newHand);
     this.showMessage(`摸到 ${gameManager.getTileDisplayText(tile)}`);
+    this.playSound('draw');
   }
 
   // 处理出牌
@@ -515,6 +606,7 @@ struct GamePage {
       const newHand = this.gameState.myHand.filter(t => t !== tile);
       gameManager.updateMyHand(newHand);
       gameManager.addDiscardTile(tile.toString());
+      this.playSound('discard');
     }
     
     const seat = this.getSeatByPlayerId(playerId);
@@ -530,24 +622,41 @@ struct GamePage {
   private handleGameAction(playerId: string, action: string, tile?: number): void {
     const playerName = this.getPlayerNameBySeat(this.getSeatByPlayerId(playerId));
     let message = '';
+    let animationText = '';
+    let animationColor = '#4CAF50';
     
     switch (action) {
       case 'PONG':
         message = `${playerName} 碰牌`;
+        animationText = '碰！';
+        animationColor = '#3498db';
+        this.playSound('pong');
         break;
       case 'CHOW':
         message = `${playerName} 吃牌`;
+        animationText = '吃！';
+        animationColor = '#2ecc71';
+        this.playSound('chow');
         break;
       case 'KONG':
         message = `${playerName} 杠牌`;
+        animationText = '杠！';
+        animationColor = '#f39c12';
+        this.playSound('kong');
         break;
       case 'WIN':
         message = `${playerName} 胡牌！`;
+        animationText = '胡！';
+        animationColor = '#e74c3c';
+        this.playSound('win');
         break;
     }
     
     if (message) {
       this.showMessage(message);
+      if (animationText) {
+        this.showAnimationEffect(animationText, animationColor);
+      }
     }
   }
 
@@ -562,10 +671,29 @@ struct GamePage {
         const seat = this.getSeatByPlayerId(playerId);
         gameManager.updatePlayerScore(seat, score);
       });
+      this.gameOverScores = scores;
+      
+      // 记录统计数据
+      const players = this.gameState.players.map(p => p.nickname);
+      const winnerName = gameManager.getPlayerName(winner);
+      
+      statisticsManager.recordGame({
+        gameId: `game-${Date.now()}`,
+        timestamp: Date.now(),
+        players: players,
+        winner: winnerName,
+        scores: scores,
+        duration: 0 // TODO: 计算实际游戏时长
+      });
     }
     
     const winnerName = gameManager.getPlayerName(winner);
-    this.showMessage(`游戏结束！${winnerName}获胜！`);
+    this.gameOverWinner = winnerName;
+    this.showGameOver = true;
+    
+    // 显示获胜动画
+    this.showAnimationEffect('🎉 胡牌！', '#FFD700');
+    this.playSound('win');
   }
 
   // 检查可用操作
@@ -577,15 +705,28 @@ struct GamePage {
 
   // 执行操作
   private performAction(action: string): void {
+    console.info(`执行操作: ${action}`);
+    
     switch (action) {
       case 'PONG':
+        this.showAnimationEffect('碰！', '#3498db');
+        this.playSound('pong');
+        break;
       case 'CHOW':
+        this.showAnimationEffect('吃！', '#2ecc71');
+        this.playSound('chow');
+        break;
       case 'KONG':
+        this.showAnimationEffect('杠！', '#f39c12');
+        this.playSound('kong');
+        break;
       case 'WIN':
-        this.sendAction(action, this.lastDiscardedTile);
+        this.showAnimationEffect('胡！', '#e74c3c');
+        this.playSound('win');
         break;
     }
     
+    this.sendAction(action, this.lastDiscardedTile);
     this.showOperationPanel = false;
     this.availableActions = [];
   }
@@ -622,6 +763,24 @@ struct GamePage {
     setTimeout(() => {
       this.gameMessage = '';
     }, 3000);
+  }
+
+  // 显示动画效果
+  private showAnimationEffect(text: string, color: string = '#4CAF50'): void {
+    this.animationText = text;
+    this.animationColor = color;
+    this.showAnimation = true;
+    
+    setTimeout(() => {
+      this.showAnimation = false;
+    }, 1500);
+  }
+
+  // 播放音效（模拟）
+  private playSound(soundType: string): void {
+    console.info(`播放音效: ${soundType}`);
+    // TODO: 集成实际音效系统
+    // 可以使用 @kit.AudioKit 实现真实音效
   }
 
   // 返回大厅
