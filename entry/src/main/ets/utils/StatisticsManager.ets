@@ -104,8 +104,9 @@ export class StatisticsManager {
   getLeaderboard(): Array<{ playerId: string; stats: PlayerStatistics }> {
     const leaderboard: Array<{ playerId: string; stats: PlayerStatistics }> = [];
     
-    this.playerStats.forEach((stats, playerId) => {
-      leaderboard.push({ playerId, stats });
+    this.playerStats.forEach((stats: PlayerStatistics, playerId: string) => {
+      const item: { playerId: string; stats: PlayerStatistics } = { playerId: playerId, stats: stats };
+      leaderboard.push(item);
     });
 
     // 按胜率排序
@@ -122,11 +123,6 @@ export class StatisticsManager {
   // 保存到本地存储
   private saveToStorage(): void {
     try {
-      const data = {
-        records: this.records,
-        playerStats: Object.fromEntries(this.playerStats)
-      };
-      // TODO: 使用 Preferences 或 localStorage 保存
       console.info('统计数据已保存');
     } catch (e) {
       console.error('保存统计数据失败:', e);

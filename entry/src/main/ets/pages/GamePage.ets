@@ -138,7 +138,7 @@ struct GamePage {
           .borderRadius(10)
           .margin({ bottom: 20 })
 
-          Button('返回大厅')
+          Button({ text: '返回大厅' })
             .width('60%')
             .height(50)
             .fontSize(18)
@@ -367,7 +367,7 @@ struct GamePage {
           .height(45)
           .fontSize(16)
           .backgroundColor('#4CAF50')
-          .color('#ffffff')
+          .fontColor('#ffffff')
           .borderRadius(8)
           .onClick(() => {
             this.drawTile();
@@ -401,7 +401,7 @@ struct GamePage {
               .height(40)
               .fontSize(14)
               .backgroundColor(this.getActionColor(action))
-              .color('#ffffff')
+              .fontColor('#ffffff')
               .borderRadius(6)
               .onClick(() => {
                 this.performAction(action);
@@ -423,7 +423,7 @@ struct GamePage {
         .height(45)
         .fontSize(16)
         .backgroundColor('#FF5722')
-        .color('#ffffff')
+        .fontColor('#ffffff')
         .borderRadius(8)
         .onClick(() => {
           this.returnToLobby();
@@ -566,9 +566,9 @@ struct GamePage {
 
   // 出牌
   private discardTile(): void {
-    if (this.selectedTile) {
+    if (this.selectedTile !== undefined) {
       this.sendDiscard(this.selectedTile);
-      this.selectedTile = undefined;
+      this.selectedTile = 0;
     }
   }
 

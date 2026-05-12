@@ -1,7 +1,9 @@
 D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\service\RoomService.java
 D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\model\Player.java
 D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\MahjongServerApplication.java
+D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\model\Game.java
 D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\model\Room.java
 D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\controller\GameController.java
+D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\model\GamePlayer.java
 D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\config\WebSocketConfig.java
 D:\DevEcoStudioProjects\mj\mahjong-server\src\main\java\com\mj\server\handler\GameWebSocketHandler.java

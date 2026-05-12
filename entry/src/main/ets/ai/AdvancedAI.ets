@@ -19,7 +19,7 @@ export interface AIDecision {
 export class AdvancedAI {
   private difficulty: AIDifficulty;
   private playerSeat: number;
-  private gameState: object = {};
+  private gameState: Record<string, Object> = {};
 
   constructor(difficulty: AIDifficulty = AIDifficulty.MEDIUM, playerSeat: number = 0) {
     this.difficulty = difficulty;
@@ -272,7 +272,7 @@ export class AdvancedAI {
     
     const randomAction = actions[Math.floor(Math.random() * actions.length)];
     return {
-      action: randomAction as AIDecision['action'],
+      action: randomAction,
       targetTile: lastTile,
       confidence: 0.4
     };
@@ -346,7 +346,7 @@ export class AdvancedAI {
     });
     
     return {
-      action: bestAction as AIDecision['action'],
+      action: bestAction,
       targetTile: lastTile,
       confidence: bestScore
     };

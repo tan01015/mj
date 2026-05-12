@@ -1,9 +1,7 @@
 package com.mj.server.model;
 
-import lombok.Data;
 import java.util.*;
 
-@Data
 public class Room {
     private String roomId;
     private String hostId;
@@ -18,6 +16,21 @@ public class Room {
         this.gameStarted = false;
         this.createTime = System.currentTimeMillis();
     }
+    
+    // Getters and Setters
+    public String getRoomId() { return roomId; }
+    public void setRoomId(String roomId) { this.roomId = roomId; }
+    public String getHostId() { return hostId; }
+    public void setHostId(String hostId) { this.hostId = hostId; }
+    public String getGameMode() { return gameMode; }
+    public void setGameMode(String gameMode) { this.gameMode = gameMode; }
+    public int getMaxPlayers() { return maxPlayers; }
+    public void setMaxPlayers(int maxPlayers) { this.maxPlayers = maxPlayers; }
+    public Map<Integer, Player> getPlayers() { return players; }
+    public void setPlayers(Map<Integer, Player> players) { this.players = players; }
+    public boolean isGameStarted() { return gameStarted; }
+    public void setGameStarted(boolean gameStarted) { this.gameStarted = gameStarted; }
+    public long getCreateTime() { return createTime; }
     
     public boolean isFull() {
         return players.size() >= maxPlayers;
