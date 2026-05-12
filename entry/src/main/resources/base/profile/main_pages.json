@@ -1,0 +1,11 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/SplashPage",
+    "pages/MainMenuPage",
+    "pages/LobbyPage",
+    "pages/GameRoomPage",
+    "pages/RoomPage",
+    "pages/GamePage"
+  ]
+}

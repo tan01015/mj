@@ -1,0 +1,11 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: mahjong-server
+
+logging:
+  level:
+    root: INFO
+    com.mj.server: DEBUG
