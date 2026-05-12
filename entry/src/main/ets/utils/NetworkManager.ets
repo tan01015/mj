@@ -8,6 +8,14 @@ export interface MessageData {
   players?: Player[];
   message?: string;
   ready?: boolean;
+  hands?: Record<string, Array<number>>;
+  tile?: number;
+  action?: string;
+  accepted?: boolean;
+  currentPlayer?: number;
+  remainingTiles?: number;
+  winner?: number;
+  scores?: Record<string, number>;
 }
 
 export interface Player {
@@ -30,7 +38,7 @@ export interface SendData {
 
 export class NetworkManager {
   private ws: webSocket.WebSocket | null = null;
-  private serverUrl: string = 'ws://192.168.1.100:8080/ws/game';
+  private serverUrl: string = 'ws://192.168.189.217:8082/ws/game';
   private messageHandlers: Map<string, Array<(data: MessageData) => void>> = new Map();
   private isConnected: boolean = false;
   private reconnectAttempts: number = 0;

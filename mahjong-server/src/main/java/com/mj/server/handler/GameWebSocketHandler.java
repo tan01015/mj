@@ -27,7 +27,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
     
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        System.out.println("New connection: " + session.getId());
+        System.out.println("新连接建立: " + session.getId());
         sessions.put(session.getId(), session);
     }
     
@@ -36,6 +36,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         try {
             Map<String, Object> msg = objectMapper.readValue(message.getPayload(), Map.class);
             String type = (String) msg.get("type");
+            
+            System.out.println("收到消息类型: " + type + ", 内容: " + msg);
             
             switch (type) {
                 case "CREATE_ROOM":
@@ -57,11 +59,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     handleHeartbeat(session);
                     break;
                 default:
-                    sendError(session, "UNKNOWN_TYPE", "Unknown message type: " + type);
+                    sendError(session, "UNKNOWN_TYPE", "未知消息类型: " + type);
             }
         } catch (Exception e) {
             e.printStackTrace();
-            sendError(session, "PARSE_ERROR", "Failed to parse message: " + e.getMessage());
+            sendError(session, "PARSE_ERROR", "消息解析失败: " + e.getMessage());
         }
     }
     
@@ -82,6 +84,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         response.put("seat", 0);
         
         sendMessage(session, response);
+        System.out.println("房间创建成功: " + room.getRoomId() + ", 玩家: " + playerId);
     }
     
     private void handleJoinRoom(WebSocketSession session, Map<String, Object> msg) {
@@ -105,8 +108,9 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             
             sendMessage(session, response);
             broadcastToRoom(roomId, "PLAYER_JOINED", response);
+            System.out.println("玩家加入房间: " + playerId + ", 房间: " + roomId);
         } else {
-            sendError(session, "JOIN_FAILED", "Cannot join room");
+            sendError(session, "JOIN_FAILED", "无法加入房间");
         }
     }
     
@@ -129,6 +133,26 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 response.put("players", convertPlayersToList(room.getPlayers()));
                 
                 broadcastToRoom(roomId, "READY_UPDATE", response);
+                System.out.println("玩家准备: " + playerId + ", 房间: " + roomId);
+                
+                // 检查是否所有玩家都准备
+                checkAllReady(roomId);
+            }
+        }
+    }
+    
+    private void checkAllReady(String roomId) {
+        Room room = roomService.getRoom(roomId);
+        if (room != null) {
+            boolean allReady = room.getPlayers().values().stream().allMatch(Player::isReady);
+            if (allReady && room.getPlayers().size() >= 2) {
+                System.out.println("所有玩家已准备，房间: " + roomId);
+                
+                Map<String, Object> response = new HashMap<>();
+                response.put("type", "ALL_READY");
+                response.put("roomId", roomId);
+                
+                broadcastToRoom(roomId, "ALL_READY", response);
             }
         }
     }
@@ -141,23 +165,88 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             Room room = roomService.getRoom(roomId);
             if (room.getHostId().equals(playerId)) {
                 roomService.startGame(roomId);
+                Game game = roomService.getGame(roomId);
                 
-                Map<String, Object> startMsg = new HashMap<>();
-                startMsg.put("type", "GAME_START");
-                startMsg.put("seed", System.currentTimeMillis());
-                startMsg.put("dealerSeat", 0);
-                startMsg.put("players", convertPlayersToList(room.getPlayers()));
-                
-                broadcastToRoom(roomId, "GAME_START", startMsg);
+                if (game != null) {
+                    // 发送游戏开始消息
+                    Map<String, Object> startMsg = new HashMap<>();
+                    startMsg.put("type", "GAME_START");
+                    startMsg.put("dealerSeat", game.getDealer());
+                    startMsg.put("currentPlayer", game.getCurrentPlayer());
+                    startMsg.put("players", convertPlayersToList(room.getPlayers()));
+                    startMsg.put("hands", game.getPlayerHands());
+                    startMsg.put("remainingTiles", game.getRemainingTiles());
+                    
+                    broadcastToRoom(roomId, "GAME_START", startMsg);
+                    System.out.println("游戏开始: " + roomId);
+                }
             }
         }
     }
     
     private void handlePlayerAction(WebSocketSession session, Map<String, Object> msg) {
-        Map<String, Object> confirm = new HashMap<>();
-        confirm.put("type", "ACTION_CONFIRM");
-        confirm.put("accepted", true);
-        sendMessage(session, confirm);
+        String action = (String) msg.get("action");
+        Object tileObj = msg.get("tile");
+        Integer tile = tileObj != null ? ((Number) tileObj).intValue() : null;
+        String playerId = sessionToPlayer.get(session.getId());
+        String roomId = findRoomByPlayer(playerId);
+        
+        System.out.println("========== 玩家动作 ==========");
+        System.out.println("玩家ID: " + playerId);
+        System.out.println("房间ID: " + roomId);
+        System.out.println("动作类型: " + action);
+        System.out.println("牌: " + tile);
+        System.out.println("完整消息: " + msg);
+        System.out.println("================================");
+        
+        if (roomId != null) {
+            boolean success = roomService.playerAction(roomId, playerId, action, tile);
+            Game game = roomService.getGame(roomId);
+            
+            Map<String, Object> confirm = new HashMap<>();
+            confirm.put("type", "ACTION_CONFIRM");
+            confirm.put("accepted", success);
+            confirm.put("action", action);
+            confirm.put("tile", tile);
+            confirm.put("playerId", playerId);
+            confirm.put("roomId", roomId);
+            
+            sendMessage(session, confirm);
+            System.out.println("动作处理结果: " + (success ? "成功" : "失败"));
+            
+            if (success && game != null) {
+                // 广播动作给其他玩家
+                Map<String, Object> broadcastMsg = new HashMap<>();
+                broadcastMsg.put("type", "PLAYER_ACTION");
+                broadcastMsg.put("action", action);
+                broadcastMsg.put("tile", tile);
+                broadcastMsg.put("playerId", playerId);
+                broadcastMsg.put("seat", getPlayerSeat(roomId, playerId));
+                broadcastMsg.put("currentPlayer", game.getCurrentPlayer());
+                broadcastMsg.put("remainingTiles", game.getRemainingTiles());
+                
+                if ("DISCARD".equals(action)) {
+                    broadcastToRoomExcludePlayer(roomId, "PLAYER_DISCARD", broadcastMsg, playerId);
+                } else {
+                    broadcastToRoom(roomId, "PLAYER_ACTION", broadcastMsg);
+                }
+                
+                // 检查游戏是否结束
+                if (game.isGameEnded()) {
+                    handleGameEnd(roomId, game);
+                }
+            }
+        }
+    }
+    
+    private void handleGameEnd(String roomId, Game game) {
+        Map<String, Object> endMsg = new HashMap<>();
+        endMsg.put("type", "GAME_END");
+        endMsg.put("winner", game.getWinner());
+        endMsg.put("scores", game.getPlayerScores());
+        
+        broadcastToRoom(roomId, "GAME_END", endMsg);
+        System.out.println("游戏结束，房间: " + roomId + ", 获胜者: " + game.getWinner());
     }
     
     private void handleHeartbeat(WebSocketSession session) {
@@ -191,6 +280,37 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 }
             }
         }
+    }
+    
+    private void broadcastToRoomExcludePlayer(String roomId, String type, Map<String, Object> data, String excludePlayerId) {
+        Room room = roomService.getRoom(roomId);
+        if (room != null) {
+            for (Player player : room.getPlayers().values()) {
+                if (!player.getPlayerId().equals(excludePlayerId)) {
+                    String sessionId = findSessionByPlayer(player.getPlayerId());
+                    if (sessionId != null) {
+                        WebSocketSession session = sessions.get(sessionId);
+                        if (session != null && session.isOpen()) {
+                            Map<String, Object> message = new HashMap<>(data);
+                            message.put("type", type);
+                            sendMessage(session, message);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private Integer getPlayerSeat(String roomId, String playerId) {
+        Room room = roomService.getRoom(roomId);
+        if (room != null) {
+            Player player = room.getPlayers().values().stream()
+                .filter(p -> p.getPlayerId().equals(playerId))
+                .findFirst()
+                .orElse(null);
+            return player != null ? player.getSeat() : null;
+        }
+        return null;
     }
     
     private void sendError(WebSocketSession session, String code, String message) {
@@ -241,8 +361,15 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             String roomId = findRoomByPlayer(playerId);
             if (roomId != null) {
                 roomService.leaveRoom(roomId, playerId);
-                broadcastToRoom(roomId, "PLAYER_LEFT", new HashMap<>());
+                
+                Map<String, Object> leaveMsg = new HashMap<>();
+                leaveMsg.put("type", "PLAYER_LEFT");
+                leaveMsg.put("playerId", playerId);
+                
+                broadcastToRoom(roomId, "PLAYER_LEFT", leaveMsg);
             }
         }
+        
+        System.out.println("连接关闭: " + session.getId() + ", 状态: " + status);
     }
 }

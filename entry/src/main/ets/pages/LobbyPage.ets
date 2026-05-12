@@ -26,14 +26,8 @@ struct LobbyPage {
   aboutToAppear() {
     networkManager.on('ROOM_CREATED', (msg: MessageData) => {
       console.info('Room created:', msg);
-      if (msg.roomId) {
-        gameManager.setRoomId(msg.roomId);
-      }
-      if (msg.playerId) {
-        gameManager.setPlayerId(msg.playerId);
-      }
-      if (msg.seat !== undefined) {
-        gameManager.setSeat(msg.seat);
+      if (msg.roomId && msg.playerId && msg.seat !== undefined) {
+        gameManager.setRoomInfo(msg.roomId, msg.playerId, msg.seat);
       }
       try {
         promptAction.showToast({ message: '房间创建成功' });
@@ -49,14 +43,8 @@ struct LobbyPage {
 
     networkManager.on('ROOM_JOINED', (msg: MessageData) => {
       console.info('Room joined:', msg);
-      if (msg.roomId) {
-        gameManager.setRoomId(msg.roomId);
-      }
-      if (msg.playerId) {
-        gameManager.setPlayerId(msg.playerId);
-      }
-      if (msg.seat !== undefined) {
-        gameManager.setSeat(msg.seat);
+      if (msg.roomId && msg.playerId && msg.seat !== undefined) {
+        gameManager.setRoomInfo(msg.roomId, msg.playerId, msg.seat);
       }
       if (msg.players) {
         gameManager.updatePlayers(msg.players);
@@ -309,7 +297,7 @@ struct LobbyPage {
       httpRequest.on('headerReceive', (header: Object) => {
         console.info('Header received:', JSON.stringify(header));
       });
-      let response = await httpRequest.request('http://192.168.1.100:8080/api/rooms', {
+      let response = await httpRequest.request('http://192.168.189.217:8082/api/rooms', {
         method: http.RequestMethod.GET,
         connectTimeout: 60000,
         readTimeout: 60000

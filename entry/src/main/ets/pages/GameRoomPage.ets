@@ -1,12 +1,12 @@
 import { networkManager, MessageData, SendData } from '../utils/NetworkManager';
-import { gameManager, Player, GameState } from '../utils/GameManager';
+import { gameManager, GamePlayer, GameManagerState } from '../utils/GameManager';
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 
 @Entry
 @Component
 struct GameRoomPage {
-  @State players: Player[] = [];
+  @State players: GamePlayer[] = [];
   @State isReady: boolean = false;
   @State allReady: boolean = false;
   @State isHost: boolean = false;
@@ -18,7 +18,7 @@ struct GameRoomPage {
     const params = router.getParams() as Record<string, string>;
     this.mode = params.mode || 'single';
 
-    this.unsubscribe = gameManager.subscribe((state: GameState) => {
+    this.unsubscribe = gameManager.subscribe((state: GameManagerState) => {
       this.players = state.players;
       this.checkAllReady();
       this.checkIsHost();
@@ -62,6 +62,7 @@ struct GameRoomPage {
               .fontSize(20)
               .fontWeight(FontWeight.Medium)
               .backgroundColor(this.isReady ? '#FF9800' : '#4CAF50')
+              .fontColor('#ffffff')
               .borderRadius(8)
               .onClick(() => {
                 this.toggleReady();
@@ -74,6 +75,7 @@ struct GameRoomPage {
                 .fontSize(20)
                 .fontWeight(FontWeight.Medium)
                 .backgroundColor('#2196F3')
+                .fontColor('#ffffff')
                 .borderRadius(8)
                 .margin({ top: 12 })
                 .onClick(() => {
@@ -173,7 +175,7 @@ struct GameRoomPage {
   @Builder
   renderPlayerSeat(seat: number): void {
     Column() {
-      if (this.players.find((p: Player) => p.seat === seat)) {
+      if (this.players.find((p: GamePlayer) => p.seat === seat)) {
         Column() {
           Stack() {
             Circle()
@@ -181,14 +183,14 @@ struct GameRoomPage {
               .height(70)
               .fill(this.getPlayerColor(seat))
         
-            Text(this.players.find((p: Player) => p.seat === seat)!.nickname.charAt(0).toUpperCase())
+            Text(this.players.find((p: GamePlayer) => p.seat === seat)!.nickname.charAt(0).toUpperCase())
               .fontSize(28)
               .fontColor('#fff')
               .fontWeight(FontWeight.Bold)
           }
           .margin({ bottom: 10 })
 
-          Text(this.players.find((p: Player) => p.seat === seat)!.nickname)
+          Text(this.players.find((p: GamePlayer) => p.seat === seat)!.nickname)
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor('#fff')
@@ -196,9 +198,9 @@ struct GameRoomPage {
             .width(100)
             .textAlign(TextAlign.Center)
 
-          Text(this.players.find((p: Player) => p.seat === seat)!.ready ? '✓ 已准备' : '○ 未准备')
+          Text(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '✓ 已准备' : '○ 未准备')
             .fontSize(13)
-            .fontColor(this.players.find((p: Player) => p.seat === seat)!.ready ? '#4CAF50' : '#95a5a6')
+            .fontColor(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '#4CAF50' : '#95a5a6')
             .margin({ top: 8 })
         }
       } else {
@@ -229,11 +231,9 @@ struct GameRoomPage {
   }
 
   startSinglePlayerGame(): void {
-    gameManager.setRoomId('single-player');
-    gameManager.setPlayerId('player-' + Date.now());
-    gameManager.setSeat(0);
+    gameManager.setRoomInfo('single-player', 'player-' + Date.now(), 0);
     
-    const aiPlayers: Player[] = [
+    const aiPlayers: GamePlayer[] = [
       { seat: 0, nickname: '玩家', ready: true, online: true },
       { seat: 1, nickname: 'AI-简单', ready: true, online: true },
       { seat: 2, nickname: 'AI-中等', ready: true, online: true },
@@ -245,13 +245,43 @@ struct GameRoomPage {
 
     setTimeout(() => {
       this.gameStarted = true;
-      setTimeout(() => {
-        try {
-          router.replaceUrl({ url: 'pages/GamePage' });
-        } catch (e) {
-          console.error('Router replace error:', e);
+      
+      networkManager.on('GAME_START', (msg: MessageData) => {
+        console.info('Single player game starting:', msg);
+        
+        if (msg.hands) {
+          const hands = msg.hands as Record<string, Array<number>>;
+          const mySeat = gameManager.gameState.seat;
+          const myHand = hands[String(mySeat)];
+          if (myHand) {
+            console.info('Received hand:', myHand);
+            gameManager.updateMyHand(myHand);
+          }
         }
-      }, 1500);
+        
+        setTimeout(() => {
+          try {
+            router.replaceUrl({ url: 'pages/GamePage' });
+          } catch (e) {
+            console.error('Router replace error:', e);
+          }
+        }, 500);
+      });
+      
+      networkManager.connect().then(() => {
+        networkManager.send('CREATE_ROOM', {
+          type: 'CREATE_ROOM',
+          playerName: '玩家',
+          gameMode: 'single',
+          maxPlayers: 4
+        });
+        
+        setTimeout(() => {
+          networkManager.send('START_GAME', { type: 'START_GAME' });
+        }, 500);
+      }).catch((err: Error) => {
+        console.error('Connect error:', err);
+      });
     }, 500);
   }
 
@@ -284,6 +314,16 @@ struct GameRoomPage {
     networkManager.on('GAME_START', (msg: MessageData) => {
       console.info('Game starting:', msg);
       gameManager.setGameStarted(true);
+      
+      if (msg.hands) {
+        const hands = msg.hands as Record<string, Array<number>>;
+        const mySeat = gameManager.gameState.seat;
+        const myHand = hands[String(mySeat)];
+        if (myHand) {
+          gameManager.updateMyHand(myHand);
+        }
+      }
+      
       try {
         promptAction.showToast({ message: '游戏开始！' });
       } catch (e) {
@@ -314,7 +354,7 @@ struct GameRoomPage {
 
   checkAllReady(): void {
     if (this.players.length >= 2) {
-      this.allReady = this.players.every((p: Player) => p.ready);
+      this.allReady = this.players.every((p: GamePlayer) => p.ready);
     } else {
       this.allReady = false;
     }
@@ -322,7 +362,7 @@ struct GameRoomPage {
 
   checkIsHost(): void {
     const state = gameManager.gameState;
-    const hostPlayer = state.players.find((p: Player) => p.seat === 0);
+    const hostPlayer = state.players.find((p: GamePlayer) => p.seat === 0);
     this.isHost = hostPlayer?.nickname === gameManager.gameState.players[state.seat]?.nickname;
   }
 

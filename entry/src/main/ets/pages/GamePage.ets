@@ -1,358 +1,631 @@
-import { networkManager, SendData } from '../utils/NetworkManager';
-import { gameManager, GameState } from '../utils/GameManager';
-import { router } from '@kit.ArkUI';
+import { networkManager, MessageData, SendData } from '../utils/NetworkManager';
+import { gameManager, GamePlayer, GameManagerState } from '../utils/GameManager';
+import { MahjongRules, MahjongTile } from '../engine/MahjongRules';
+import { AdvancedAI, AIDifficulty, AIDecision } from '../ai/AdvancedAI';
+import router from '@ohos.router';
+import { promptAction } from '@kit.ArkUI';
 
 @Entry
 @Component
 struct GamePage {
-  @State gameState: GameState = gameManager.gameState;
-  @State selectedTile: number | null = null;
+  @State gameState: GameManagerState = gameManager.gameState;
+  @State showOperationPanel: boolean = false;
+  @State availableActions: string[] = [];
+  @State lastDiscardedTile: number = 0;
+  @State selectedTile: number = 0;
+  @State showTileInfo: boolean = false;
+  @State currentTileInfo: MahjongTile | null = null;
+  @State gameMessage: string = '';
+  @State showGameOver: boolean = false;
+  
   private unsubscribe: () => void = () => {};
+  private aiPlayers: Map<number, AdvancedAI> = new Map();
 
   aboutToAppear() {
-    this.unsubscribe = gameManager.subscribe((state: GameState) => {
+    this.unsubscribe = gameManager.subscribe((state: GameManagerState) => {
       this.gameState = state;
+      this.updateGameStatus();
     });
+
+    this.setupNetworkListeners();
+    this.initializeAIPlayers();
+    this.updateGameStatus();
   }
 
   aboutToDisappear() {
     this.unsubscribe();
+    networkManager.clearHandlers();
   }
 
   build() {
-    Column() {
-      Row() {
-        Column({ space: 3 }) {
-          Text(`房间号: ${this.gameState.roomId || '123456'}`)
-            .fontSize(12)
-            .fontColor('#fff')
-          Text(`玩法: 红中麻将`)
-            .fontSize(12)
-            .fontColor('#ffffff80')
-          Text(`局数: 1/8`)
-            .fontSize(12)
-            .fontColor('#ffffff80')
-        }
-        .width(120)
-        .padding({ left: 20 })
-
-        Blank()
-
-        Column({ space: 5 }) {
-          Stack() {
-            Circle()
-              .width(35)
-              .height(35)
-              .fill('#ff6b6b')
-            
-            Text('👤')
-              .fontSize(16)
-          }
-          
-          Text('玩家')
-            .fontSize(14)
-            .fontColor('#fff')
-            .fontWeight(FontWeight.Medium)
-          Text('123456789')
-            .fontSize(12)
-            .fontColor('#ffffff80')
-        }
-        .width(100)
-        .alignItems(HorizontalAlign.Center)
-
-        Blank()
-
-        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-          ForEach([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], (i: number) => {
-            Column() {
-              Text('🀄')
-                .fontSize(20)
-            }
-            .width(30)
-            .height(40)
-            .backgroundColor('#d4a574')
-            .borderRadius(4)
-            .margin(2)
-          })
-        }
-        .width(320)
-
-        Blank()
-
-        Column({ space: 15 }) {
-          Stack() {
-            Circle()
-              .width(40)
-              .height(40)
-              .fill('rgba(255,255,255,0.2)')
-            
-            Text('✓')
-              .fontSize(20)
-              .fontColor('#4CAF50')
-          }
-
-          Stack() {
-            Circle()
-              .width(40)
-              .height(40)
-              .fill('rgba(255,255,255,0.2)')
-            
-            Text('😊')
-              .fontSize(18)
-          }
-
-          Stack() {
-            Circle()
-              .width(40)
-              .height(40)
-              .fill('rgba(255,255,255,0.2)')
-            
-            Text('🎤')
-              .fontSize(18)
-          }
-        }
-        .width(60)
-        .padding({ right: 20 })
-      }
-      .width('100%')
-      .height(70)
-      .backgroundColor('#1a5e1f')
-
-      Stack({ alignContent: Alignment.Center }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle()
-            .width(100)
-            .height(100)
-            .fill('#16521a')
-            .border({ width: 2, color: '#2d8a34' })
-          
-          Stack({ alignContent: Alignment.Center }) {
-            Circle()
-              .width(70)
-              .height(70)
-              .fill('#1a5e1f')
-            
-            Column({ space: 3 }) {
-              Text('🀄')
-                .fontSize(22)
-                .fontColor('#FFD700')
-              Text(`${this.gameState.remainingTiles || 136}`)
-                .fontSize(11)
-                .fontColor('#ffffff80')
-            }
-          }
-        }
-
-        Stack() {
-          Column() {
-            Stack({ alignContent: Alignment.Center }) {
-              Circle()
-                .width(40)
-                .height(40)
-                .fill('#c0392b')
-              Text('北')
-                .fontSize(14)
-                .fontColor('#fff')
-                .fontWeight(FontWeight.Bold)
-            }
-          }
-          .position({ top: 0, left: '50%' })
-          .margin({ left: -20 })
-
-          Column() {
-            Stack({ alignContent: Alignment.Center }) {
-              Circle()
-                .width(40)
-                .height(40)
-                .fill('#3498db')
-              Text('东')
-                .fontSize(14)
-                .fontColor('#fff')
-                .fontWeight(FontWeight.Bold)
-            }
-          }
-          .position({ top: '50%', right: 0 })
-          .margin({ top: -20 })
-
-          Column() {
-            Stack({ alignContent: Alignment.Center }) {
-              Circle()
-                .width(40)
-                .height(40)
-                .fill('#f39c12')
-              Text('南')
-                .fontSize(14)
-                .fontColor('#fff')
-                .fontWeight(FontWeight.Bold)
-            }
-          }
-          .position({ bottom: 0, left: '50%' })
-          .margin({ left: -20 })
-
-          Column() {
-            Stack({ alignContent: Alignment.Center }) {
-              Circle()
-                .width(40)
-                .height(40)
-                .fill('#27ae60')
-              Text('西')
-                .fontSize(14)
-                .fontColor('#fff')
-                .fontWeight(FontWeight.Bold)
-            }
-          }
-          .position({ top: '50%', left: 0 })
-          .margin({ top: -20 })
-        }
-
-        Column() {
-          this.renderPlayerSeat(1, 'AI-简单', '🌱', false)
-        }
-        .position({ top: 20, left: 40 })
-
-        Column() {
-          this.renderPlayerSeat(2, 'AI-困难', '🌳', false)
-        }
-        .position({ top: 20, right: 40 })
-
-        Column() {
-          this.renderPlayerSeat(3, 'AI-中等', '🌿', false)
-        }
-        .position({ bottom: 180, left: 40 })
-
-        Column() {
-          this.renderPlayerSeat(0, '玩家', '👤', true)
-        }
-        .position({ bottom: 180, right: 40 })
-      }
-      .width('100%')
-      .flexGrow(1)
-      .backgroundColor('#145019')
-
+    Row() {
+      // 左侧玩家信息面板
       Column() {
-        Text('我的手牌')
-          .fontSize(13)
-          .fontColor('#ffffffcc')
-          .margin({ bottom: 6 })
-          .alignSelf(ItemAlign.Center)
-
-        Row({ space: 2 }) {
-          ForEach(this.gameState.myHand.length > 0 ? this.gameState.myHand : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], (tile: number, index: number) => {
-            Column() {
-              Text(tile.toString())
-                .width(52)
-                .height(70)
-                .fontSize(17)
-                .fontWeight(FontWeight.Bold)
-                .backgroundColor(this.selectedTile === tile ? '#FFD700' : '#fff')
-                .fontColor(this.selectedTile === tile ? '#1a1a1a' : '#333')
-                .borderRadius(7)
-                .textAlign(TextAlign.Center)
-                .shadow({
-                  radius: this.selectedTile === tile ? 6 : 3,
-                  color: this.selectedTile === tile ? '#FFD700' : '#000',
-                  offsetX: 0,
-                  offsetY: 2
-                })
-                .onClick(() => {
-                  this.selectTile(tile);
-                })
-            }
-          }, (tile: number, index: number) => `tile-${index}`)
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .padding({ left: 15, right: 15 })
-
-        Row() {
-          Blank()
-          Button('出牌')
-            .width(100)
-            .height(45)
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .backgroundColor(this.selectedTile !== null ? '#4CAF50' : '#666')
-            .fontColor('#fff')
-            .borderRadius(8)
-            .enabled(this.selectedTile !== null)
-            .onClick(() => {
-              if (this.selectedTile !== null) {
-                this.discardTile(this.selectedTile);
-              }
-            })
-            .margin({ right: 15 })
-
-          Button('退出')
-            .width(70)
-            .height(45)
-            .fontSize(14)
-            .backgroundColor('#e74c3c')
-            .fontColor('#fff')
-            .borderRadius(8)
-            .onClick(() => {
-              this.leaveGame();
-            })
-            .margin({ right: 20 })
-        }
-        .width('100%')
-        .height(55)
+        this.buildPlayerPanel()
       }
-      .width('100%')
-      .height(130)
-      .backgroundColor('#1a5e1f')
+      .width('20%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.2)')
+      .padding(15)
+
+      // 中间游戏区域
+      Column() {
+        this.buildGameArea()
+      }
+      .width('60%')
+      .height('100%')
+      .backgroundColor('#1a1a2e')
+
+      // 右侧操作面板
+      Column() {
+        this.buildControlPanel()
+      }
+      .width('20%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.2)')
+      .padding(15)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#145019')
-    .padding({ bottom: 0 })
-    .margin({ bottom: 0 })
+    .backgroundColor('#1a1a2e')
   }
 
   @Builder
-  renderPlayerSeat(seat: number, name: string, icon: string, isActive: boolean): void {
-    Column({ space: 4 }) {
-      Stack() {
-        Circle()
-          .width(40)
-          .height(40)
-          .fill(isActive ? '#4CAF50' : '#3498db')
+  buildPlayerPanel(): void {
+    Column() {
+      Text('玩家信息')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#fff')
+        .margin({ bottom: 20 })
+
+      ForEach(this.gameState.players, (player: GamePlayer) => {
+        Row() {
+          Circle()
+            .width(40)
+            .height(40)
+            .fill(this.getPlayerColor(player.seat))
+          
+          Column() {
+            Text(player.nickname)
+              .fontSize(16)
+              .fontColor('#fff')
+              .maxLines(1)
+            
+            Text(`分数: ${player.score || 0}`)
+              .fontSize(12)
+              .fontColor('#ffffffcc')
+          }
+          .margin({ left: 10 })
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          if (player.seat === this.gameState.currentPlayer) {
+            Text('🔄')
+              .fontSize(16)
+          }
+        }
+        .width('100%')
+        .padding(10)
+        .backgroundColor('rgba(255,255,255,0.1)')
+        .borderRadius(8)
+        .margin({ bottom: 8 })
+      }, (player: GamePlayer) => player.seat.toString())
+
+      Blank()
+
+      Column() {
+        Text(`剩余牌数: ${this.gameState.remainingTiles}`)
+          .fontSize(14)
+          .fontColor('#ffffffcc')
         
-        Text(icon)
+        Text(`庄家: ${this.getPlayerName(this.gameState.dealer)}`)
+          .fontSize(14)
+          .fontColor('#ffffffcc')
+          .margin({ top: 5 })
+        
+        Text(`回合: ${this.gameState.round}`)
+          .fontSize(14)
+          .fontColor('#ffffffcc')
+          .margin({ top: 5 })
+      }
+      .width('100%')
+      .padding(10)
+      .backgroundColor('rgba(255,255,255,0.05)')
+      .borderRadius(8)
+    }
+  }
+
+  @Builder
+  buildGameArea(): void {
+    Column() {
+      // 顶部对手区域
+      Row() {
+        ForEach([1, 2, 3], (seat: number) => {
+          if (seat !== this.gameState.seat) {
+            this.buildOpponentArea(seat)
+          }
+        }, (seat: number) => seat.toString())
+      }
+      .width('100%')
+      .height('25%')
+      .justifyContent(FlexAlign.SpaceAround)
+
+      // 中间弃牌区域
+      Column() {
+        Text('弃牌区')
+          .fontSize(16)
+          .fontColor('#ffffffcc')
+          .margin({ bottom: 10 })
+        
+        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
+          ForEach(this.gameState.myDiscarded, (tile: number) => {
+            this.buildTile(tile, false)
+          }, (tile: number) => tile.toString())
+        }
+        .width('80%')
+        .height(80)
+      }
+      .width('100%')
+      .height('20%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+
+      // 底部玩家手牌区域
+      Column() {
+        Text('我的手牌')
+          .fontSize(16)
+          .fontColor('#ffffffcc')
+          .margin({ bottom: 10 })
+        
+        Row() {
+          ForEach(this.gameState.myHand, (tile: number) => {
+            this.buildTile(tile, true)
+          }, (tile: number) => tile.toString())
+        }
+        .width('90%')
+        .height(120)
+        .justifyContent(FlexAlign.Center)
+      }
+      .width('100%')
+      .height('35%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+
+      // 游戏消息
+      if (this.gameMessage) {
+        Text(this.gameMessage)
           .fontSize(18)
+          .fontColor('#4CAF50')
+          .margin({ top: 20 })
+          .textAlign(TextAlign.Center)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .padding(20)
+  }
+
+  @Builder
+  buildOpponentArea(seat: number): void {
+    Column() {
+      Text(this.getPlayerName(seat))
+        .fontSize(16)
+        .fontColor('#fff')
+        .margin({ bottom: 10 })
+      
+      Text(`手牌: ${this.getOpponentHandCount(seat)}张`)
+        .fontSize(12)
+        .fontColor('#ffffffcc')
+      
+      if (seat === this.gameState.currentPlayer) {
+        Text('思考中...')
+          .fontSize(12)
+          .fontColor('#FF9800')
+          .margin({ top: 5 })
+      }
+    }
+    .width(100)
+    .height(80)
+    .backgroundColor('rgba(255,255,255,0.1)')
+    .borderRadius(8)
+    .padding(10)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  buildTile(tile: number, selectable: boolean): void {
+    Stack() {
+      Rect()
+        .width(40)
+        .height(60)
+        .fill(gameManager.getTileColor(tile))
+        .borderRadius(4)
+      
+      Column() {
+        Text(gameManager.getTileDisplayText(tile))
+          .fontSize(14)
+          .fontColor('#fff')
+          .fontWeight(FontWeight.Bold)
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
+    }
+    .margin(2)
+    .onClick(() => {
+      if (selectable && gameManager.isMyTurn()) {
+        this.selectTile(tile);
+      }
+    })
+  }
+
+  @Builder
+  buildControlPanel(): void {
+    Column() {
+      Text('游戏控制')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#fff')
+        .margin({ bottom: 20 })
+
+      if (gameManager.isMyTurn()) {
+        Button('摸牌')
+          .width('100%')
+          .height(45)
+          .fontSize(16)
+          .backgroundColor('#4CAF50')
+          .color('#ffffff')
+          .borderRadius(8)
+          .onClick(() => {
+            this.drawTile();
+          })
+          .margin({ bottom: 10 })
+
+        if (this.selectedTile) {
+          Button('出牌')
+            .width('100%')
+            .height(45)
+            .fontSize(16)
+            .backgroundColor('#2196F3')
+            .borderRadius(8)
+            .onClick(() => {
+              this.discardTile();
+            })
+            .margin({ bottom: 10 })
+        }
       }
 
-      Text(name)
-        .fontSize(13)
-        .fontColor('#fff')
-        .fontWeight(FontWeight.Medium)
+      if (this.showOperationPanel) {
+        Column() {
+          Text('可选操作')
+            .fontSize(16)
+            .fontColor('#fff')
+            .margin({ bottom: 10 })
+          
+          ForEach(this.availableActions, (action: string) => {
+            Button(this.getActionText(action))
+              .width('100%')
+              .height(40)
+              .fontSize(14)
+              .backgroundColor(this.getActionColor(action))
+              .color('#ffffff')
+              .borderRadius(6)
+              .onClick(() => {
+                this.performAction(action);
+              })
+              .margin({ bottom: 8 })
+          }, (action: string) => action)
+        }
+        .width('100%')
+        .padding(10)
+        .backgroundColor('rgba(255,255,255,0.1)')
+        .borderRadius(8)
+        .margin({ bottom: 10 })
+      }
 
-      Text('手牌: 13张')
-        .fontSize(11)
-        .fontColor('#ffffff80')
+      Blank()
+
+      Button('返回大厅')
+        .width('100%')
+        .height(45)
+        .fontSize(16)
+        .backgroundColor('#FF5722')
+        .color('#ffffff')
+        .borderRadius(8)
+        .onClick(() => {
+          this.returnToLobby();
+        })
+        .margin({ bottom: 10 })
+
+      Button('游戏规则')
+        .width('100%')
+        .height(45)
+        .fontSize(16)
+        .backgroundColor('#9C27B0')
+        .borderRadius(8)
+        .onClick(() => {
+          this.showGameRules();
+        })
     }
-    .width(75)
-    .height(80)
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(255,255,255,0.08)')
-    .borderRadius(8)
-    .border({ width: isActive ? 2 : 0, color: '#4CAF50' })
   }
 
-  selectTile(tile: number): void {
-    this.selectedTile = this.selectedTile === tile ? null : tile;
+  // 初始化AI玩家
+  private initializeAIPlayers(): void {
+    const aiSeats = [1, 2, 3]; // AI玩家座位号
+    aiSeats.forEach(seat => {
+      let difficulty: AIDifficulty;
+      if (seat === 1) {
+        difficulty = AIDifficulty.EASY;
+      } else if (seat === 2) {
+        difficulty = AIDifficulty.MEDIUM;
+      } else {
+        difficulty = AIDifficulty.HARD;
+      }
+      this.aiPlayers.set(seat, new AdvancedAI(difficulty, seat));
+    });
   }
 
-  discardTile(tile: number): void {
-    const actionData: SendData = {
-      type: 'PLAYER_ACTION',
-      action: 'DISCARD',
+  // 设置网络监听器
+  private setupNetworkListeners(): void {
+    networkManager.on('TILE_DRAWN', (msg: MessageData) => {
+      if (msg.playerId === gameManager.gameState.playerId && msg.tile) {
+        this.handleTileDrawn(msg.tile);
+      }
+    });
+
+    networkManager.on('TILE_DISCARDED', (msg: MessageData) => {
+      if (msg.playerId && msg.tile) {
+        this.handleTileDiscarded(msg.playerId, msg.tile);
+      }
+    });
+
+    networkManager.on('GAME_ACTION', (msg: MessageData) => {
+      if (msg.playerId && msg.action) {
+        this.handleGameAction(msg.playerId, msg.action, msg.tile);
+      }
+    });
+
+    networkManager.on('GAME_END', (msg: MessageData) => {
+      if (msg.winner !== undefined) {
+        this.handleGameEnd(msg.winner, msg.scores);
+      }
+    });
+
+    networkManager.on('ERROR', (msg: MessageData) => {
+      const message = msg.message ? String(msg.message) : '操作失败';
+      this.showMessage(message);
+    });
+  }
+
+  // 更新游戏状态
+  private updateGameStatus(): void {
+    if (this.gameState.gameEnded) {
+      this.showGameOver = true;
+      return;
+    }
+
+    if (!this.gameState.gameStarted) {
+      this.gameMessage = '等待游戏开始...';
+      return;
+    }
+
+    if (this.gameState.currentPlayer === this.gameState.seat) {
+      this.gameMessage = '轮到您出牌';
+    } else {
+      const currentPlayerName = gameManager.getCurrentPlayerName();
+      this.gameMessage = `${currentPlayerName}的回合`;
+    }
+
+    // AI自动行动
+    if (this.gameState.currentPlayer !== this.gameState.seat && 
+        this.gameState.gameStarted && 
+        !this.gameState.gameEnded) {
+      this.processAITurn();
+    }
+  }
+
+  // 处理AI回合
+  private processAITurn(): void {
+    const ai = this.aiPlayers.get(this.gameState.currentPlayer);
+    if (ai) {
+      setTimeout(() => {
+        const decision = ai.makeDecision(this.gameState.myHand, this.lastDiscardedTile);
+        this.executeAIDecision(decision);
+      }, 1000 + Math.random() * 2000); // AI思考时间
+    }
+  }
+
+  // 执行AI决策
+  private executeAIDecision(decision: AIDecision): void {
+    switch (decision.action) {
+      case 'DISCARD':
+        if (decision.tile) {
+          this.sendDiscard(decision.tile);
+        }
+        break;
+      case 'PONG':
+        this.sendAction('PONG', this.lastDiscardedTile);
+        break;
+      case 'CHOW':
+        this.sendAction('CHOW', this.lastDiscardedTile);
+        break;
+      case 'KONG':
+        this.sendAction('KONG', this.lastDiscardedTile);
+        break;
+      case 'WIN':
+        this.sendAction('WIN', this.lastDiscardedTile);
+        break;
+      default:
+        // AI选择跳过
+        break;
+    }
+  }
+
+  // 摸牌
+  private drawTile(): void {
+    networkManager.send('DRAW_TILE', { type: 'DRAW_TILE' });
+  }
+
+  // 选择牌
+  private selectTile(tile: number): void {
+    this.selectedTile = tile;
+  }
+
+  // 出牌
+  private discardTile(): void {
+    if (this.selectedTile) {
+      this.sendDiscard(this.selectedTile);
+      this.selectedTile = undefined;
+    }
+  }
+
+  // 发送出牌指令
+  private sendDiscard(tile: number): void {
+    networkManager.send('DISCARD_TILE', { 
+      type: 'DISCARD_TILE', 
+      tile: tile 
+    });
+  }
+
+  // 发送动作指令
+  private sendAction(action: string, tile?: number): void {
+    networkManager.send('GAME_ACTION', { 
+      type: 'GAME_ACTION', 
+      action: action,
       tile: tile
-    };
-    networkManager.send('PLAYER_ACTION', actionData);
-    this.selectedTile = null;
+    });
   }
 
-  leaveGame(): void {
+  // 处理摸牌
+  private handleTileDrawn(tile: number): void {
+    const newHand = [...this.gameState.myHand, tile];
+    gameManager.updateMyHand(newHand);
+    this.showMessage(`摸到 ${gameManager.getTileDisplayText(tile)}`);
+  }
+
+  // 处理出牌
+  private handleTileDiscarded(playerId: string, tile: number): void {
+    this.lastDiscardedTile = tile;
+    
+    if (playerId === gameManager.gameState.playerId) {
+      // 自己出牌，从手牌移除
+      const newHand = this.gameState.myHand.filter(t => t !== tile);
+      gameManager.updateMyHand(newHand);
+      gameManager.addDiscardTile(tile.toString());
+    }
+    
+    const seat = this.getSeatByPlayerId(playerId);
+    this.showMessage(`${this.getPlayerNameBySeat(seat)} 打出 ${gameManager.getTileDisplayText(tile)}`);
+    
+    // 检查可用的操作
+    if (playerId !== gameManager.gameState.playerId) {
+      this.checkAvailableActions(tile);
+    }
+  }
+
+  // 处理游戏动作
+  private handleGameAction(playerId: string, action: string, tile?: number): void {
+    const playerName = this.getPlayerNameBySeat(this.getSeatByPlayerId(playerId));
+    let message = '';
+    
+    switch (action) {
+      case 'PONG':
+        message = `${playerName} 碰牌`;
+        break;
+      case 'CHOW':
+        message = `${playerName} 吃牌`;
+        break;
+      case 'KONG':
+        message = `${playerName} 杠牌`;
+        break;
+      case 'WIN':
+        message = `${playerName} 胡牌！`;
+        break;
+    }
+    
+    if (message) {
+      this.showMessage(message);
+    }
+  }
+
+  // 处理游戏结束
+  private handleGameEnd(winner: number, scores?: Record<string, number>): void {
+    gameManager.setGameEnded(true, winner);
+    
+    if (scores) {
+      Object.entries(scores).forEach((entry) => {
+        const playerId = entry[0];
+        const score = entry[1];
+        const seat = this.getSeatByPlayerId(playerId);
+        gameManager.updatePlayerScore(seat, score);
+      });
+    }
+    
+    const winnerName = gameManager.getPlayerName(winner);
+    this.showMessage(`游戏结束！${winnerName}获胜！`);
+  }
+
+  // 检查可用操作
+  private checkAvailableActions(discardedTile: number): void {
+    const actions = gameManager.getAvailableActions(discardedTile);
+    this.availableActions = actions;
+    this.showOperationPanel = actions.length > 0;
+  }
+
+  // 执行操作
+  private performAction(action: string): void {
+    switch (action) {
+      case 'PONG':
+      case 'CHOW':
+      case 'KONG':
+      case 'WIN':
+        this.sendAction(action, this.lastDiscardedTile);
+        break;
+    }
+    
+    this.showOperationPanel = false;
+    this.availableActions = [];
+  }
+
+  // 获取操作文本
+  private getActionText(action: string): string {
+    const actionMap: Record<string, string> = {
+      'PONG': '碰',
+      'CHOW': '吃', 
+      'KONG': '杠',
+      'WIN': '胡',
+      'DRAW': '摸牌',
+      'DISCARD': '出牌'
+    };
+    return actionMap[action] || action;
+  }
+
+  // 获取操作颜色
+  private getActionColor(action: string): string {
+    const colorMap: Record<string, string> = {
+      'WIN': '#e74c3c',
+      'PONG': '#3498db',
+      'CHOW': '#2ecc71',
+      'KONG': '#f39c12',
+      'DRAW': '#4CAF50',
+      'DISCARD': '#2196F3'
+    };
+    return colorMap[action] || '#9b59b6';
+  }
+
+  // 显示消息
+  private showMessage(message: string): void {
+    this.gameMessage = message;
+    setTimeout(() => {
+      this.gameMessage = '';
+    }, 3000);
+  }
+
+  // 返回大厅
+  private returnToLobby(): void {
     networkManager.disconnect();
     gameManager.reset();
     try {
@@ -360,5 +633,48 @@ struct GamePage {
     } catch (e) {
       console.error('Router back error:', e);
     }
+  }
+
+  // 显示游戏规则
+  private showGameRules(): void {
+    try {
+      promptAction.showDialog({
+        title: '麻将游戏规则',
+        message: '基本规则：\n1. 四人麻将，轮流摸牌出牌\n2. 可以吃、碰、杠、胡\n3. 胡牌需要满足特定牌型\n4. 七对子、碰碰胡等特殊牌型有额外分数',
+        buttons: [{ text: '确定' }]
+      });
+    } catch (e) {
+      console.error('Show dialog error:', e);
+    }
+  }
+
+  // 获取玩家颜色
+  private getPlayerColor(seat: number): string {
+    const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12'];
+    return colors[seat % colors.length];
+  }
+
+  // 获取玩家名称
+  private getPlayerName(seat: number): string {
+    return gameManager.getPlayerName(seat);
+  }
+
+  // 根据玩家ID获取座位号
+  private getSeatByPlayerId(playerId: string): number {
+    const player = this.gameState.players.find(p => 
+      p.nickname === playerId || p.seat.toString() === playerId
+    );
+    return player ? player.seat : 0;
+  }
+
+  // 根据座位号获取玩家名称
+  private getPlayerNameBySeat(seat: number): string {
+    return this.getPlayerName(seat);
+  }
+
+  // 获取对手手牌数量
+  private getOpponentHandCount(seat: number): number {
+    // 简化处理，实际应该从服务器获取
+    return 13; // 标准麻将手牌数量
   }
 }

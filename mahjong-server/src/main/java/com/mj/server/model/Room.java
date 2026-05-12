@@ -43,4 +43,8 @@ public class Room {
         }
         return -1;
     }
+    
+    public void removePlayer(String playerId) {
+        players.values().removeIf(p -> p.getPlayerId().equals(playerId));
+    }
 }

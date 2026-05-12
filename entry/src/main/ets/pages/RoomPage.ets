@@ -1,19 +1,19 @@
 import { networkManager, MessageData, SendData } from '../utils/NetworkManager';
-import { gameManager, Player, GameState } from '../utils/GameManager';
+import { gameManager, GamePlayer, GameManagerState } from '../utils/GameManager';
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
 
 @Entry
 @Component
 struct RoomPage {
-  @State players: Player[] = [];
+  @State players: GamePlayer[] = [];
   @State isReady: boolean = false;
   @State allReady: boolean = false;
   @State isHost: boolean = false;
   private unsubscribe: () => void = () => {};
 
   aboutToAppear() {
-    this.unsubscribe = gameManager.subscribe((state: GameState) => {
+    this.unsubscribe = gameManager.subscribe((state: GameManagerState) => {
       this.players = state.players;
       this.checkAllReady();
       this.checkIsHost();
@@ -145,12 +145,12 @@ struct RoomPage {
   }
 
   checkAllReady(): void {
-    this.allReady = this.players.length > 0 && this.players.every((p: Player) => p.ready);
+    this.allReady = this.players.length > 0 && this.players.every((p: GamePlayer) => p.ready);
   }
 
   checkIsHost(): void {
     const state = gameManager.gameState;
-    const hostPlayer = state.players.find((p: Player) => p.seat === 0);
+    const hostPlayer = state.players.find((p: GamePlayer) => p.seat === 0);
     this.isHost = hostPlayer?.nickname === state.players[state.seat]?.nickname;
   }
 
@@ -162,7 +162,7 @@ struct RoomPage {
   @Builder
   renderPlayerSeat(seat: number): void {
     Column() {
-      if (this.players.find((p: Player) => p.seat === seat)) {
+      if (this.players.find((p: GamePlayer) => p.seat === seat)) {
         Column() {
           Stack() {
             Circle()
@@ -170,14 +170,14 @@ struct RoomPage {
               .height(70)
               .fill(this.getPlayerColor(seat))
         
-            Text(this.players.find((p: Player) => p.seat === seat)!.nickname.charAt(0).toUpperCase())
+            Text(this.players.find((p: GamePlayer) => p.seat === seat)!.nickname.charAt(0).toUpperCase())
               .fontSize(28)
               .fontColor('#fff')
               .fontWeight(FontWeight.Bold)
           }
           .margin({ bottom: 10 })
 
-          Text(this.players.find((p: Player) => p.seat === seat)!.nickname)
+          Text(this.players.find((p: GamePlayer) => p.seat === seat)!.nickname)
             .fontSize(16)
             .fontWeight(FontWeight.Medium)
             .fontColor('#fff')
@@ -185,9 +185,9 @@ struct RoomPage {
             .width(100)
             .textAlign(TextAlign.Center)
 
-          Text(this.players.find((p: Player) => p.seat === seat)!.ready ? '✓ 已准备' : '○ 未准备')
+          Text(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '✓ 已准备' : '○ 未准备')
             .fontSize(13)
-            .fontColor(this.players.find((p: Player) => p.seat === seat)!.ready ? '#4CAF50' : '#95a5a6')
+            .fontColor(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '#4CAF50' : '#95a5a6')
             .margin({ top: 8 })
         }
       } else {
