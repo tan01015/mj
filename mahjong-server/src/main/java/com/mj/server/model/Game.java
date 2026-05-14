@@ -399,6 +399,7 @@ public class Game {
     }
 
     public synchronized boolean pong(String playerId, int tile) {
+        // 必须是在别人出牌后才能碰，并且手上至少有两张
         if (!"DISCARD".equals(lastAction) || !canPong(playerId, tile)) {
             System.out.println("[碰牌失败] 玩家ID: " + playerId + ", 原因: 不是出牌动作或不能碰牌");
             return false;
@@ -413,16 +414,43 @@ public class Game {
             return false;
         }
 
-        // 从手牌中移除两张相同的牌
-        hand.remove(Integer.valueOf(tile));
-        hand.remove(Integer.valueOf(tile));
+        // 从手牌中移除两张指定牌（按值删除，倒序删除以避免索引问题）
+        int removed = 0;
+        for (int i = hand.size() - 1; i >= 0 && removed < 2; i--) {
+            if (hand.get(i) == tile) {
+                hand.remove(i);
+                removed++;
+            }
+        }
+        if (removed < 2) {
+            System.out.println("[碰牌失败] 玩家ID: " + playerId + ", 原因: 无法从手牌中移除两张指定牌: " + tile);
+            return false;
+        }
 
-        // 创建碰牌组合
-        List<Integer> pongMeld = Arrays.asList(tile, tile, tile);
-        playerMelds.get(playerId).add(pongMeld);
+        // 创建可变的碰牌组合并加入到副露
+        List<List<Integer>> melds = playerMelds.get(playerId);
+        if (melds == null) {
+            melds = new ArrayList<>();
+            playerMelds.put(playerId, melds);
+        }
+        List<Integer> pongMeld = new ArrayList<>(Arrays.asList(tile, tile, tile));
+        melds.add(pongMeld);
 
-        // 从弃牌堆移除被碰的牌
-        playerDiscarded.get(lastActionPlayer).remove(Integer.valueOf(tile));
+        // 从弃牌堆中移除被碰的那张（优先移除最后一张匹配的弃牌）
+        if (lastActionPlayer != null) {
+            List<Integer> discarded = playerDiscarded.get(lastActionPlayer);
+            if (discarded != null && !discarded.isEmpty()) {
+                for (int i = discarded.size() - 1; i >= 0; i--) {
+                    if (Objects.equals(discarded.get(i), tile)) {
+                        discarded.remove(i);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 排序手牌，保持客户端显示稳定
+        Collections.sort(hand);
 
         lastActionPlayer = playerId;
         lastAction = "PONG";
@@ -432,6 +460,7 @@ public class Game {
         // 碰牌后，清空等待反应状态（因为有人执行了动作）
         waitingForReaction = false;
         pendingReactions.clear();
+        reactionResults.clear();
 
         System.out.println("[碰牌成功] 玩家ID: " + playerId + ", 座位: " + currentPlayer + ", 碰牌: " + tile);
         System.out.println("[手牌] 玩家ID: " + playerId + ", 碰牌后手牌: " + hand);
@@ -610,7 +639,7 @@ public class Game {
 
         // 如果是明杠或暗杠（不是加杠），创建新的杠牌组合
         if ("DISCARD".equals(lastAction) || handCount >= 4) {
-            List<Integer> kongMeld = Arrays.asList(tile, tile, tile, tile);
+            List<Integer> kongMeld = new ArrayList<>(Arrays.asList(tile, tile, tile, tile));
             playerMelds.get(playerId).add(kongMeld);
         }
 
@@ -960,7 +989,7 @@ public class Game {
         
         return success;
     }
-    
+
     /**
      * 检查所有玩家是否都已完成反应
      * 如果都完成了，推进到下一位玩家（出牌者的下家）
