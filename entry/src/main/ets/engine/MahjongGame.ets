@@ -159,9 +159,17 @@ export class MahjongGame {
       player.hand.push(tile);
       player.hand.sort((a, b) => a - b);
       this.state.remainingTiles = this.tileWall.length;
+
+      // 记录摸牌动作，UI 层靠此判断是否需要出牌
+      this.state.lastAction = {
+        player: playerSeat,
+        action: 'DRAW',
+        tile: tile
+      };
+
       return tile;
     }
-    
+
     return null;
   }
 
@@ -192,13 +200,6 @@ export class MahjongGame {
       tile: tile
     };
     this.state.lastAction = discardAction;
-
-    // 检查手牌是否为空（所有牌都组成了面子），为空则胜利
-    if (player.hand.length === 0) {
-      this.state.winner = playerSeat;
-      this.endGame();
-      return true;
-    }
 
     // 不自动推进到下一位玩家，先等待所有人响应（碰/杠/胡）
     this.state.waitingForReaction = true;
@@ -239,21 +240,10 @@ export class MahjongGame {
     };
     this.state.lastAction = pongAction;
     
-    // 碰牌玩家成为当前玩家
+    // 碰牌玩家成为当前玩家（碰牌后不补牌，直接进入出牌阶段）
     this.state.currentPlayer = playerSeat;
-    
-    // 碰牌后需要摸一张牌
-    if (this.tileWall.length > 0) {
-      const newTile = this.tileWall.pop()!;
-      player.hand.push(newTile);
-      player.hand.sort((a, b) => a - b);
-      this.state.remainingTiles = this.tileWall.length;
-    } else {
-      // 牌墙为空，流局
-      this.endGame();
-    }
-    
     return true;
+    
   }
 
   // 玩家杠牌
@@ -299,8 +289,14 @@ export class MahjongGame {
       player.hand.push(newTile);
       player.hand.sort((a, b) => a - b);
       this.state.remainingTiles = this.tileWall.length;
+    } else {
+      // 牌墙为空，流局
+      this.endGame();
     }
-    
+
+    // 杠牌玩家成为当前玩家
+    this.state.currentPlayer = playerSeat;
+
     return true;
   }
 
@@ -310,49 +306,65 @@ export class MahjongGame {
     if (!player) {
       return false;
     }
-    
-    // 检查是否可以胡牌
-    if (!MahjongRules.canWin(player.hand, winningTile)) {
+
+    // 判断自摸还是点炮：自摸时 hand 已包含 winningTile
+    const isSelfDraw = player.hand.indexOf(winningTile) !== -1;
+
+    let canWinResult: boolean;
+    if (isSelfDraw) {
+      // 自摸：hand 已含牌（14张），临时移除一张再传给 canWin 判断
+      const idx = player.hand.indexOf(winningTile);
+      player.hand.splice(idx, 1);
+      canWinResult = MahjongRules.canWin(player.hand, winningTile);
+      player.hand.push(winningTile);
+      player.hand.sort((a, b) => a - b);
+    } else {
+      // 点炮：hand 不含牌（13张），canWin 内部追加
+      canWinResult = MahjongRules.canWin(player.hand, winningTile);
+    }
+
+    if (!canWinResult) {
       return false;
     }
-    
+
     // 计算分数
-    const score = this.calculateWinScore(playerSeat, winningTile);
+    const score = this.calculateWinScore(playerSeat, winningTile, isSelfDraw);
     player.score += score;
-    
+
     // 设置赢家
     this.state.winner = playerSeat;
     this.endGame();
-    
+
     // 记录动作
-    const winAction: LastActionInfo = {
+    this.state.lastAction = {
       player: playerSeat,
       action: 'WIN',
       tile: winningTile
     };
-    this.state.lastAction = winAction;
-    
+
     return true;
   }
 
   // 计算胡牌分数
-  private calculateWinScore(playerSeat: number, winningTile: number): number {
+  private calculateWinScore(playerSeat: number, winningTile: number,
+                            isSelfDraw: boolean): number {
     const player = this.getPlayer(playerSeat);
     if (!player) return 0;
-    
-    // 简化计分逻辑
+
     let baseScore = 1;
-    const isSelfDraw = winningTile !== this.state.lastDiscardedTile;
-    
-    // 检查特殊牌型
-    if (MahjongRules.isSevenPairs([...player.hand, winningTile])) {
-      baseScore = 4; // 七对子
+
+    // 检查七对子：需要构建完整14张手牌
+    const fullHand = isSelfDraw ?
+      [...player.hand] :
+      [...player.hand, winningTile];
+    if (MahjongRules.isSevenPairs(fullHand)) {
+      baseScore = 4;
     }
-    
+
     if (isSelfDraw) {
       baseScore *= 2; // 自摸加倍
     }
-    
+
     return baseScore;
   }
 
@@ -482,14 +494,14 @@ export class MahjongGame {
         break;
       case 'KONG':
         success = this.kong(playerSeat, tile);
-        if (success) {
+        if (success && !this.isGameEnded()) {
           this.state.waitingForReaction = false;
           this.state.currentPlayer = playerSeat;
         }
         break;
       case 'PONG':
         success = this.pong(playerSeat, tile);
-        if (success) {
+        if (success && !this.isGameEnded()) {
           this.state.waitingForReaction = false;
           this.state.currentPlayer = playerSeat;
         }

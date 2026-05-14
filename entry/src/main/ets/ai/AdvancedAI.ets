@@ -196,16 +196,25 @@ export class AdvancedAI {
   private calculateTingProbability(hand: number[], discardTile: number): number {
     const simulatedHand = hand.filter(t => t !== discardTile);
     let tingCount = 0;
-    const totalTiles = 34; // 麻将牌总数
 
-    // 模拟所有可能的摸牌
-    for (let tile = 1; tile <= totalTiles; tile++) {
-      if (MahjongRules.canWin(simulatedHand, tile)) {
+    // 遍历所有有效牌：万(1-9)、条(11-19)、筒(21-29)、字(31-37)
+    const validTiles: number[] = [];
+    for (let i = 1; i <= 9; i++) {
+ validTiles.push(i); }
+    for (let i = 11; i <= 19; i++) {
+ validTiles.push(i); }
+    for (let i = 21; i <= 29; i++) {
+ validTiles.push(i); }
+    for (let i = 31; i <= 37; i++) {
+ validTiles.push(i); }
+
+    for (let i = 0; i < validTiles.length; i++) {
+      if (MahjongRules.canWin(simulatedHand, validTiles[i])) {
         tingCount++;
       }
     }
 
-    return tingCount / totalTiles;
+    return tingCount / validTiles.length;
   }
 
   // 找到最优出牌

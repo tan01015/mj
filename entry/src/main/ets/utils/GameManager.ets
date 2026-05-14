@@ -1,5 +1,5 @@
 import { MahjongRules, MahjongTile } from '../engine/MahjongRules';
-import { MahjongGame, GameState as LocalGameState, GamePlayer as EngineGamePlayer } from '../engine/MahjongGame';
+import { MahjongGame, GameState as LocalGameState, GamePlayer as EngineGamePlayer, GamePhase } from '../engine/MahjongGame';
 import { MessageData } from './NetworkManager';
 
 export interface AIDecisionResult {
@@ -49,6 +49,7 @@ export interface GameManagerState {
   allMelds: Map<number, number[][]>;
   allDiscarded: Map<number, number[]>;
   gameId: string | null;
+  handVersion: number;
 }
 
 // 游戏管理器
@@ -72,7 +73,8 @@ class GameManager {
     allHands: new Map(),
     allMelds: new Map(),
     allDiscarded: new Map(),
-    gameId: null
+    gameId: null,
+    handVersion: 0
   };
 
   private subscribers: Array<(state: GameManagerState) => void> = [];
@@ -119,7 +121,8 @@ class GameManager {
       allHands: new Map(this.state.allHands),
       allMelds: new Map(this.state.allMelds),
       allDiscarded: new Map(this.state.allDiscarded),
-      gameId: this.state.gameId
+      gameId: this.state.gameId,
+      handVersion: this.state.handVersion
     };
   }
 
@@ -158,6 +161,7 @@ class GameManager {
   updateMyHand(hand: number[]): void {
     // 不排序，保持原始顺序（新摸的牌在末尾）
     this.state.myHand = [...hand];
+    this.state.handVersion++;
     this.notifySubscribers();
   }
 
@@ -313,6 +317,7 @@ class GameManager {
 
     this.localGame.initializeGame(players);
     this.state.gameStarted = true;
+    this.state.seat = 0; // 人类玩家座位号
     this.state.currentPlayer = this.localGame.getState().currentPlayer;
 
     // 同步人类玩家的手牌到UI
@@ -457,9 +462,7 @@ class GameManager {
     if (!this.localGame) return null;
     const tile = this.localGame.drawTile(this.state.seat);
     if (tile !== null) {
-      this.state.myHand = [...this.localGame.getState().players[0].hand];
-      this.state.remainingTiles = this.localGame.getState().remainingTiles;
-      this.notifySubscribers();
+      this.syncLocalStateToUI();
     }
     return tile;
   }
@@ -538,11 +541,12 @@ class GameManager {
       return null;
     }
 
-    // 正常回合：检查是否刚碰/杠（已经有牌可出）
+    // 正常回合：检查是否刚摸牌/碰/杠（已经有牌可出，不需要再摸）
     const stateBeforeAction = this.localGame.getState();
     const justReacted = stateBeforeAction.lastAction &&
       stateBeforeAction.lastAction.player === currentSeat &&
-      (stateBeforeAction.lastAction.action === 'PONG' ||
+      (stateBeforeAction.lastAction.action === 'DRAW' ||
+       stateBeforeAction.lastAction.action === 'PONG' ||
        stateBeforeAction.lastAction.action === 'KONG');
 
     let drawnTile: number | null = null;
@@ -669,25 +673,32 @@ class GameManager {
     const humanPlayer = gameState.players[this.state.seat];
 
     if (humanPlayer) {
+      // 检查手牌是否变化，变化时递增版本号
+      const oldHand = JSON.stringify(this.state.myHand);
+      const newHand = JSON.stringify(humanPlayer.hand);
+      if (oldHand !== newHand) {
+        this.state.handVersion++;
+      }
       this.state.myHand = [...humanPlayer.hand];
       this.state.myDiscarded = [...humanPlayer.discarded];
       this.state.myMelds = [...humanPlayer.melds];
     }
     this.state.currentPlayer = gameState.currentPlayer;
     this.state.remainingTiles = gameState.remainingTiles;
-    this.state.gameEnded = gameState.phase === 3; // ENDED
+    this.state.gameEnded = gameState.phase === GamePhase.ENDED;
 
-    if (gameState.winner !== undefined) {
-      this.state.winner = gameState.winner;
-    }
+    // 同步赢家（引擎无赢家时清除）
+    this.state.winner = gameState.winner !== undefined ? gameState.winner : undefined;
 
-    // 同步最后动作（碰/杠/吃/胡提示用）
+    // 同步最后动作（引擎无动作时清除）
     if (gameState.lastAction) {
       this.state.lastAction = {
         player: gameState.lastAction.player,
         action: gameState.lastAction.action,
         tile: gameState.lastAction.tile
       };
+    } else {
+      this.state.lastAction = undefined;
     }
 
     // 更新分数
@@ -903,7 +914,8 @@ class GameManager {
       allHands: new Map(),
       allMelds: new Map(),
       allDiscarded: new Map(),
-      gameId: null
+      gameId: null,
+      handVersion: 0
     };
     this.localGame = null;
     this.aiHands.clear();

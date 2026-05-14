@@ -243,6 +243,11 @@ public class AIPlayer implements Runnable {
                     System.out.println("[AI] AI暗杠 - 座位: " + seat);
                     game.kong(playerId, drawnTile);
                     Thread.sleep(800);
+                    // 杠后检查岭上开花自摸
+                    if (game.isGameEnded()) {
+                        System.out.println("[AI] 杠后岭上开花，游戏结束 - 座位: " + seat);
+                        return;
+                    }
                     // 杠后岭上已补牌，手牌<13，直接弃牌
                     int tileToDiscard = selectTileToDiscard();
                     if (tileToDiscard > 0) {

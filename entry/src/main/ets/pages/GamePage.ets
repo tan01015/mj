@@ -30,6 +30,7 @@ struct GamePage {
   private unsubscribe: () => void = () => {};
   private aiPlayers: Map<number, AdvancedAI> = new Map();
   private gameStartTime: number = 0;
+  private aiTurnScheduled: boolean = false;
 
   aboutToAppear() {
     // 设置横屏全屏
@@ -371,8 +372,8 @@ struct GamePage {
         Scroll() {
           Row() {
             ForEach(this.gameState.myHand, (tile: number, index: number) => {
-              this.buildTile(tile, true)
-            }, (tile: number, index: number) => `${tile}-${index}`)
+              this.buildTile(tile, index, true)
+            }, (tile: number, index: number) => `v${this.gameState.handVersion}-${tile}-${index}`)
           }
           .justifyContent(FlexAlign.Center)
         }
@@ -479,14 +480,14 @@ struct GamePage {
   }
 
   @Builder
-  buildTile(tile: number, selectable: boolean): void {
+  buildTile(tile: number, index: number, selectable: boolean): void {
     Stack() {
       Rect()
         .width(40)
         .height(60)
         .fill(gameManager.getTileColor(tile))
         .borderRadius(4)
-      
+
       Column() {
         Text(gameManager.getTileDisplayText(tile))
           .fontSize(14)
@@ -501,7 +502,13 @@ struct GamePage {
     .margin(2)
     .onClick(() => {
       if (selectable && gameManager.isMyTurn()) {
-        this.selectTile(tile);
+        // 从手牌数组按索引直接读取，避免 @Builder 闭包变量被复用
+        const hand = this.gameState.myHand;
+        if (index >= 0 && index < hand.length) {
+          const clickedTile = hand[index];
+          console.info(`buildTile click: index=${index}, displayed=${tile}, actual=${clickedTile}, hand=[${hand.join(',')}]`);
+          this.selectTile(clickedTile);
+        }
       }
     })
   }
@@ -787,12 +794,15 @@ struct GamePage {
 
   // 处理AI回合
   private processAITurn(): void {
+    if (this.aiTurnScheduled) return;
     const currentSeat = this.gameState.currentPlayer;
     const ai = this.aiPlayers.get(currentSeat);
     if (!ai) return;
     if (!this.gameState.isSinglePlayer) {
       // 多人模式：简单延迟后AI决策
+      this.aiTurnScheduled = true;
       setTimeout(() => {
+        this.aiTurnScheduled = false;
         const aiHand = gameManager.getPlayerHand(currentSeat);
         const decision = ai.makeDecision(aiHand, this.lastDiscardedTile, []);
         this.executeAIDecision(decision);
@@ -801,7 +811,9 @@ struct GamePage {
     }
 
     // 单机模式：增加思考延迟
+    this.aiTurnScheduled = true;
     setTimeout(() => {
+      this.aiTurnScheduled = false;
       // 各种终止条件
       if (this.gameState.gameEnded || this.showGameOver) return;
       const localGame = gameManager.getLocalGame();
@@ -819,26 +831,12 @@ struct GamePage {
       }
 
       if (discardedTile !== null) {
-        // AI出牌了 → 通知并检查人类能否碰/杠/胡
+        // AI出牌了 → 串联检查所有玩家（AI + 人类）的反应
         this.lastDiscardedTile = discardedTile;
         const aiName = gameManager.getPlayerName(currentSeat);
         this.actionNotification = `${aiName} 打出 ${gameManager.getTileDisplayText(discardedTile)}`;
 
-        const humanReactions = gameManager.getLocalReactions();
-        if (humanReactions.length > 0) {
-          // 人类有可操作项 → 停在这里，等人类选择
-          this.availableActions = humanReactions;
-          this.showOperationPanel = true;
-        } else {
-          // 人类无操作 → 自动推进
-          gameManager.passLocalReaction();
-          if (localGame.isWaitingForReaction()) {
-            localGame.advanceToNextPlayer();
-          }
-          gameManager.syncLocalStateToUI();
-          gameManager.syncAIHands();
-          this.updateGameStatus();
-        }
+        this.handleAllReactionsAfterDiscard();
       } else {
         // AI没出牌（可能执行了碰/杠但已在processAITurn内部处理了反应）
         gameManager.syncLocalStateToUI();
@@ -868,7 +866,7 @@ struct GamePage {
     this.checkNextAIReaction(1);
   }
 
-  // 按逆时针顺序检查一个AI的反应
+  // 按逆时针顺序检查每个玩家的反应（AI 自动决策，人类等待点击）
   private checkNextAIReaction(aiIndex: number): void {
     const localGame = gameManager.getLocalGame();
     if (!localGame || !localGame.isWaitingForReaction()) {
@@ -879,7 +877,7 @@ struct GamePage {
     }
 
     if (aiIndex > 3) {
-      // 所有AI都PASS了 → 推进
+      // 所有玩家都PASS了 → 推进
       if (localGame.isWaitingForReaction()) {
         localGame.advanceToNextPlayer();
       }
@@ -890,40 +888,57 @@ struct GamePage {
     }
 
     const discarderSeat = localGame.getDiscarderSeat();
-    const aiSeat = (discarderSeat + aiIndex) % 4;
+    const targetSeat = (discarderSeat + aiIndex) % 4;
 
-    // 跳过人类自己
-    if (aiSeat === 0) {
+    // 出牌者跳过自己
+    if (targetSeat === discarderSeat) {
       this.checkNextAIReaction(aiIndex + 1);
       return;
     }
 
-    const ai = this.aiPlayers.get(aiSeat);
+    // 人类玩家：显示操作面板
+    if (targetSeat === this.gameState.seat) {
+      const reactions = localGame.getAvailableReactions(targetSeat);
+      if (reactions.length > 0) {
+        this.availableActions = reactions;
+        this.showOperationPanel = true;
+        return;
+      }
+      // 人类无可选操作 → PASS 继续
+      gameManager.passLocalReaction();
+      setTimeout(() => {
+        this.showOperationPanel = false;
+        this.availableActions = [];
+        this.checkNextAIReaction(aiIndex + 1);
+      }, 300);
+      return;
+    }
+
+    // AI 玩家
+    const ai = this.aiPlayers.get(targetSeat);
     if (!ai) {
       this.checkNextAIReaction(aiIndex + 1);
       return;
     }
 
-    // 检查AI可用的反应
-    const reactions = localGame.getAvailableReactions(aiSeat);
+    const reactions = localGame.getAvailableReactions(targetSeat);
     const gameState = localGame.getState();
     const lastTile = gameState.lastDiscardedTile || 0;
 
     if (reactions.length > 0) {
-      const aiHand = [...gameState.players[aiSeat].hand];
+      const aiHand = [...gameState.players[targetSeat].hand];
       const decision = ai.makeDecision(aiHand, lastTile, []);
 
       if (decision.action === 'WIN' || decision.action === 'KONG' ||
           decision.action === 'PONG') {
-        // AI 执行反应
-        const aiName = gameManager.getPlayerName(aiSeat);
+        const aiName = gameManager.getPlayerName(targetSeat);
         const actionTextMap: Record<string, string> = {
           'WIN': '胡牌！', 'KONG': '杠牌', 'PONG': '碰牌'
         };
         this.actionNotification = `${aiName} ${actionTextMap[decision.action]} ${gameManager.getTileDisplayText(lastTile)}`;
         this.showAnimationEffect(actionTextMap[decision.action], decision.action === 'WIN' ? '#e74c3c' : '#3498db');
 
-        localGame.resolveReaction(aiSeat, decision.action);
+        localGame.resolveReaction(targetSeat, decision.action);
         gameManager.syncLocalStateToUI();
         gameManager.syncAIHands();
 
@@ -931,7 +946,6 @@ struct GamePage {
           this.handleLocalGameEnd();
           return;
         }
-        // AI反应后成为当前玩家，继续AI回合
         this.updateGameStatus();
         return;
       }
@@ -1053,32 +1067,47 @@ struct GamePage {
 
   // 出牌
   private discardTile(): void {
-    if (this.selectedTile !== 0) {
-      if (this.gameState.isSinglePlayer) {
-        gameManager.localDiscardTile(this.selectedTile);
-        this.lastDiscardedTile = this.selectedTile;
-        this.playSound('discard');
-        this.selectedTile = 0;
+    if (this.selectedTile === 0) {
+      return;
+    }
 
-        // 检查游戏是否结束（手牌为空）
-        const localGame = gameManager.getLocalGame();
-        if (localGame && localGame.isGameEnded()) {
-          this.handleLocalGameEnd();
-          return;
-        }
+    // 安全检查：确保选中的牌确实在当前手牌中
+    const tileInHand = this.gameState.myHand.indexOf(this.selectedTile);
+    if (tileInHand === -1) {
+      console.error(`discardTile: selected tile ${this.selectedTile} not found in hand: ${JSON.stringify(this.gameState.myHand)}`);
+      this.selectedTile = 0;
+      return;
+    }
 
-        // 处理AI对弃牌的反应（串联延迟检查）
-        this.handleAllReactionsAfterDiscard();
-      } else {
-        const tile = this.selectedTile;
-        const newHand = this.gameState.myHand.filter(t => t !== tile);
-        gameManager.updateMyHand(newHand);
-        gameManager.addDiscardTile(tile.toString());
-        this.lastDiscardedTile = tile;
-        this.playSound('discard');
-        this.sendDiscard(tile);
-        this.selectedTile = 0;
+    if (this.gameState.isSinglePlayer) {
+      const success = gameManager.localDiscardTile(this.selectedTile);
+      if (!success) {
+        // 引擎拒绝出牌，恢复选中状态
+        console.error(`discardTile: engine rejected discard of tile ${this.selectedTile}`);
+        return;
       }
+      this.lastDiscardedTile = this.selectedTile;
+      this.playSound('discard');
+      this.selectedTile = 0;
+
+      // 检查游戏是否结束（手牌为空）
+      const localGame = gameManager.getLocalGame();
+      if (localGame && localGame.isGameEnded()) {
+        this.handleLocalGameEnd();
+        return;
+      }
+
+      // 处理AI对弃牌的反应（串联延迟检查）
+      this.handleAllReactionsAfterDiscard();
+    } else {
+      const tile = this.selectedTile;
+      const newHand = this.gameState.myHand.filter(t => t !== tile);
+      gameManager.updateMyHand(newHand);
+      gameManager.addDiscardTile(tile.toString());
+      this.lastDiscardedTile = tile;
+      this.playSound('discard');
+      this.sendDiscard(tile);
+      this.selectedTile = 0;
     }
   }
 
@@ -1344,12 +1373,17 @@ struct GamePage {
 
   // 判断是否需要出牌（而非摸牌）
   private needDiscard(): boolean {
-    const justReacted = this.gameState.lastAction &&
-      this.gameState.lastAction.player === this.gameState.seat &&
-      (this.gameState.lastAction.action === 'PONG' ||
-       this.gameState.lastAction.action === 'KONG' ||
-       this.gameState.lastAction.action === 'CHOW');
-    return justReacted || this.gameState.myHand.length >= 14;
+    // 单机模式：通过引擎 lastAction 判断玩家是否已摸牌（需要出牌）
+    const lastAction = this.gameState.lastAction;
+    if (lastAction && lastAction.player === this.gameState.seat) {
+      if (lastAction.action === 'DRAW' || lastAction.action === 'PONG' ||
+          lastAction.action === 'KONG' || lastAction.action === 'CHOW') {
+        return true;
+      }
+    }
+
+    // 兜底：手牌达到14张时必须出牌
+    return this.gameState.myHand.length >= 14;
   }
 
   // 获取动作显示文本

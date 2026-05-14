@@ -433,16 +433,6 @@ public class Game {
         waitingForReaction = false;
         pendingReactions.clear();
 
-        // 碰牌后补牌：从牌墙摸一张
-        if (!wall.isEmpty()) {
-            int replacementTile = wall.remove(0);
-            hand.add(replacementTile);
-            remainingTiles = wall.size();
-            System.out.println("[碰牌补牌] 玩家ID: " + playerId + ", 补牌: " + replacementTile + ", 剩余牌: " + remainingTiles);
-        } else {
-            System.out.println("[碰牌补牌] 牌墙已空，无法补牌");
-        }
-
         System.out.println("[碰牌成功] 玩家ID: " + playerId + ", 座位: " + currentPlayer + ", 碰牌: " + tile);
         System.out.println("[手牌] 玩家ID: " + playerId + ", 碰牌后手牌: " + hand);
         System.out.println("[牌组] 玩家ID: " + playerId + ", 牌组: " + playerMelds.get(playerId));
@@ -647,7 +637,10 @@ public class Game {
 
             // 检查岭上开花（自摸胡）
             if (canWin(playerId, replacementTile)) {
-                System.out.println("[杠后补牌] 岭上开花！玩家ID: " + playerId + " 可以自摸胡牌！");
+                System.out.println("[杠后补牌] 岭上开花！玩家ID: " + playerId + " 自摸胡牌！");
+                winner = getPlayerSeat(playerId);
+                lastAction = "WIN";
+                lastActionTile = replacementTile;
             }
         } else {
             System.out.println("[杠后补牌] 牌墙已空，无法补牌");
@@ -675,14 +668,30 @@ public class Game {
     }
 
     /**
-     * 自摸胡检查：当前手牌直接判断（tile已在手中）
+     * 自摸胡检查：当前手牌直接判断（tile已在手中），含已碰/杠牌组
      */
     public boolean canSelfDrawWin(String playerId) {
         List<Integer> hand = playerHands.get(playerId);
-        if (hand.size() != 14) return false;
-        boolean result = isSevenPairs(hand) || isStandardWin(hand);
-        System.out.println("[胡牌检查-自摸] 玩家ID: " + playerId + ", 手牌: " + hand.size() + "张, 结果: " + (result ? "可以胡" : "不能胡"));
-        return result;
+        List<List<Integer>> melds = playerMelds.get(playerId);
+        // 计算总手牌等效数：手牌 + 已碰/杠牌组张数
+        int meldTileCount = 0;
+        if (melds != null) {
+            for (List<Integer> meld : melds) {
+                meldTileCount += meld.size();
+            }
+        }
+        int totalEffective = hand.size() + meldTileCount;
+        if (totalEffective != 14) return false;
+
+        // 构建完整14张手牌用于判断（手牌 + 已碰/杠的牌展开）
+        List<Integer> combined = new ArrayList<>(hand);
+        if (melds != null) {
+            for (List<Integer> meld : melds) {
+                combined.addAll(meld);
+            }
+        }
+        // 对14张牌进行标准判断
+        return isSevenPairs(combined) || isStandardWin(combined);
     }
 
     private boolean canWinSimple(List<Integer> hand) {
