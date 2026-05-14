@@ -2,6 +2,7 @@ import { networkManager, MessageData, SendData } from '../utils/NetworkManager';
 import { gameManager, GamePlayer, GameManagerState } from '../utils/GameManager';
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
+import { window } from '@kit.ArkUI';
 
 @Entry
 @Component
@@ -13,6 +14,15 @@ struct RoomPage {
   private unsubscribe: () => void = () => {};
 
   aboutToAppear() {
+    // 设置横屏全屏
+    window.getLastWindow(getContext(this)).then((win: window.Window) => {
+      win.setWindowLayoutFullScreen(true);
+      win.setWindowSystemBarEnable([]);
+      win.setPreferredOrientation(window.Orientation.LANDSCAPE);
+    }).catch((e: Error) => {
+      console.error('set landscape fullscreen error:', JSON.stringify(e));
+    });
+
     this.unsubscribe = gameManager.subscribe((state: GameManagerState) => {
       this.players = state.players;
       this.checkAllReady();
@@ -32,7 +42,29 @@ struct RoomPage {
     });
 
     networkManager.on('GAME_START', (msg: MessageData) => {
+      console.info('RoomPage received GAME_START:', JSON.stringify(msg));
       gameManager.setGameStarted(true);
+
+      // 在跳转前把游戏数据存入 GameManager，GamePage 初始化时直接读取
+      if (msg.hands) {
+        const hands = msg.hands as Record<string, Array<number>>;
+        const mySeat = gameManager.gameState.seat;
+        const myHand = hands[String(mySeat)];
+        if (myHand) {
+          gameManager.updateMyHand(myHand);
+        }
+        gameManager.syncMultiplayerHands(hands);
+      }
+      if (msg.currentPlayer !== undefined) {
+        gameManager.updateCurrentPlayer(Number(msg.currentPlayer));
+      }
+      if (msg.remainingTiles !== undefined) {
+        gameManager.updateRemainingTiles(Number(msg.remainingTiles));
+      }
+      if (msg.dealerSeat !== undefined) {
+        gameManager.updateRoundInfo(Number(msg.dealerSeat), 1);
+      }
+
       try {
         promptAction.showToast({ message: '游戏开始！' });
       } catch (e) {
@@ -51,81 +83,148 @@ struct RoomPage {
   }
 
   build() {
-    Row() {
-      Column() {
-        Button('←')
-          .fontSize(24)
-          .width(45)
-          .height(45)
-          .backgroundColor('rgba(255,255,255,0.2)')
-          .fontColor('#fff')
-          .margin({ bottom: 30 })
-          .onClick(() => {
-            networkManager.disconnect();
-            gameManager.reset();
-            try {
-              router.back();
-            } catch (e) {
-              console.error('Router back error:', e);
-            }
-          })
-
-        Button(this.isReady ? '取消准备' : '准备')
-          .width('80%')
-          .height(55)
-          .fontSize(18)
-          .backgroundColor(this.isReady ? '#FF9800' : '#4CAF50')
-          .onClick(() => {
-            this.toggleReady();
-          })
-          .margin({ bottom: 15 })
-
-        if (this.canStartGame()) {
-          Button('开始游戏')
-            .width('80%')
-            .height(55)
-            .fontSize(18)
-            .backgroundColor('#2196F3')
-            .onClick(() => {
-              this.startGame();
-            })
-        }
+    Stack() {
+      // 背景装饰
+      Row() {
+        Text('🀄')
+          .fontSize(180)
+          .opacity(0.06)
+          .rotate({ angle: -25 })
+          .margin({ left: 150 })
+        Blank()
+        Text('🀅')
+          .fontSize(150)
+          .opacity(0.06)
+          .rotate({ angle: 30 })
+          .margin({ right: 200 })
       }
-      .width('20%')
+      .width('100%')
       .height('100%')
-      .padding({ top: 20, left: 20 })
-      .backgroundColor('rgba(0,0,0,0.2)')
 
-      Column() {
-        Row() {
-          Text('游戏房间')
-            .fontSize(32)
-            .fontWeight(FontWeight.Bold)
-            .fontColor('#fff')
-          
+      // 主内容
+      Row() {
+        // 左侧控制面板
+        Column() {
+          Row() {
+            Button('←')
+              .fontSize(22)
+              .width(50)
+              .height(50)
+              .backgroundColor('rgba(255, 255, 255, 0.15)')
+              .fontColor('#fff')
+              .borderRadius(25)
+              .onClick(() => {
+                networkManager.disconnect();
+                gameManager.reset();
+                try {
+                  router.back();
+                } catch (e) {
+                  console.error('Router back error:', e);
+                }
+              })
+
+            Blank()
+
+            Text('房间')
+              .fontSize(18)
+              .fontColor('#ffffffcc')
+          }
+          .width('100%')
+          .padding({ left: 20, right: 20, top: 20 })
+
+          Divider()
+            .color('rgba(255, 255, 255, 0.15)')
+            .margin({ top: 15 })
+
+          // 房间信息
+          Column() {
+            Text(`房间ID`)
+              .fontSize(14)
+              .fontColor('#ffffff80')
+            Text(gameManager.gameState.roomId)
+              .fontSize(18)
+              .fontColor('#fff')
+              .fontWeight(FontWeight.Bold)
+              .margin({ top: 5 })
+          }
+          .width('100%')
+          .padding(20)
+          .margin({ top: 15 })
+          .backgroundColor('rgba(255, 255, 255, 0.08)')
+          .borderRadius(10)
+
           Blank()
 
-          Text(`房间ID: ${gameManager.gameState.roomId}`)
-            .fontSize(16)
-            .fontColor('#7f8c8d')
-            .padding({ right: 20 })
-        }
-        .width('100%')
-        .height(70)
-        .padding({ top: 20 })
-        .backgroundColor('rgba(0,0,0,0.3)')
+          // 操作按钮
+          Column() {
+            Button(this.isReady ? '取消准备' : '准备就绪')
+              .width('90%')
+              .height(55)
+              .fontSize(18)
+              .backgroundColor(this.isReady ? '#FF9800' : '#4CAF50')
+              .fontColor('#ffffff')
+              .borderRadius(28)
+              .onClick(() => {
+                this.toggleReady();
+              })
 
-        Row() {
-          ForEach([0, 1, 2, 3], (seat: number) => {
-            this.renderPlayerSeat(seat)
-          }, (seat: number) => seat.toString())
+            if (this.canStartGame()) {
+              Button('开始游戏')
+                .width('90%')
+                .height(55)
+                .fontSize(18)
+                .backgroundColor('#2196F3')
+                .fontColor('#ffffff')
+                .borderRadius(28)
+                .margin({ top: 15 })
+                .onClick(() => {
+                  this.startGame();
+                })
+            }
+          }
+          .width('100%')
+          .padding({ left: 15, right: 15, bottom: 30 })
         }
-        .width('95%')
-        .height('70%')
-        .justifyContent(FlexAlign.SpaceEvenly)
-        .alignItems(VerticalAlign.Center)
+        .width('20%')
+        .height('100%')
+        .backgroundColor('rgba(0, 0, 0, 0.35)')
+
+        // 右侧玩家区域
+        Column() {
+          // 标题栏
+          Row() {
+            Text('🌐 游戏房间')
+              .fontSize(28)
+              .fontWeight(FontWeight.Bold)
+              .fontColor('#fff')
+
+            Blank()
+
+            Text(`房间ID: ${gameManager.gameState.roomId}`)
+              .fontSize(16)
+              .fontColor('#ffffff80')
+              .padding({ right: 25 })
+          }
+          .width('100%')
+          .height(65)
+          .padding({ top: 15 })
+          .backgroundColor('rgba(0, 0, 0, 0.25)')
+
+          // 玩家座位区域
+          Row() {
+            ForEach([0, 1, 2, 3], (seat: number) => {
+              this.renderPlayerSeat(seat)
+            }, (seat: number) => seat.toString())
+          }
+          .width('95%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.SpaceEvenly)
+          .alignItems(VerticalAlign.Center)
+        }
+        .width('80%')
+        .height('100%')
       }
-      .width('80%')
+      .width('100%')
       .height('100%')
     }
     .width('100%')
@@ -149,9 +248,7 @@ struct RoomPage {
   }
 
   checkIsHost(): void {
-    const state = gameManager.gameState;
-    const hostPlayer = state.players.find((p: GamePlayer) => p.seat === 0);
-    this.isHost = hostPlayer?.nickname === state.players[state.seat]?.nickname;
+    this.isHost = gameManager.gameState.seat === 0;
   }
 
   canStartGame(): boolean {
@@ -166,55 +263,61 @@ struct RoomPage {
         Column() {
           Stack() {
             Circle()
-              .width(70)
-              .height(70)
+              .width(80)
+              .height(80)
               .fill(this.getPlayerColor(seat))
-        
+
             Text(this.players.find((p: GamePlayer) => p.seat === seat)!.nickname.charAt(0).toUpperCase())
-              .fontSize(28)
+              .fontSize(32)
               .fontColor('#fff')
               .fontWeight(FontWeight.Bold)
           }
-          .margin({ bottom: 10 })
+          .margin({ bottom: 12 })
 
           Text(this.players.find((p: GamePlayer) => p.seat === seat)!.nickname)
-            .fontSize(16)
+            .fontSize(18)
             .fontWeight(FontWeight.Medium)
             .fontColor('#fff')
             .maxLines(1)
-            .width(100)
+            .width(120)
             .textAlign(TextAlign.Center)
 
-          Text(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '✓ 已准备' : '○ 未准备')
-            .fontSize(13)
-            .fontColor(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '#4CAF50' : '#95a5a6')
-            .margin({ top: 8 })
+          Row() {
+            Text(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '✓' : '○')
+              .fontSize(16)
+              .fontColor(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '#4CAF50' : '#95a5a6')
+            Text(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '已准备' : '未准备')
+              .fontSize(14)
+              .fontColor(this.players.find((p: GamePlayer) => p.seat === seat)!.ready ? '#4CAF50' : '#95a5a6')
+              .margin({ left: 5 })
+          }
+          .margin({ top: 10 })
         }
       } else {
         Column() {
           Stack() {
             Circle()
-              .width(70)
-              .height(70)
-              .fill('#ecf0f1')
-        
+              .width(80)
+              .height(80)
+              .fill('rgba(255, 255, 255, 0.1)')
+
             Text('?')
-              .fontSize(28)
-              .fontColor('#bdc3c7')
+              .fontSize(32)
+              .fontColor('#ffffff60')
           }
-          .margin({ bottom: 10 })
+          .margin({ bottom: 12 })
 
           Text('等待加入')
-            .fontSize(14)
-            .fontColor('#bdc3c7')
+            .fontSize(16)
+            .fontColor('#ffffff60')
         }
       }
     }
-    .width(120)
-    .height(180)
+    .width(150)
+    .height(200)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor('rgba(255,255,255,0.1)')
-    .borderRadius(12)
+    .backgroundColor('rgba(255, 255, 255, 0.08)')
+    .borderRadius(16)
   }
 
   startGame(): void {

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn *)",
+      "Bash(npm *)",
+      "Bash(git *)",
+      "Bash(hvigorw *)",
+      "Bash(node *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(echo *)",
+      "Bash(dir *)",
+      "Bash(type *)",
+      "Bash(pwd *)",
+      "Bash(which *)",
+      "Bash(where *)",
+      "Bash(java *)",
+      "Bash(javac *)",
+      "Bash(curl *)",
+      "Bash(wget *)"
+    ]
+  }
+}

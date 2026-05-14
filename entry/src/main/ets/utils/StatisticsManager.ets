@@ -1,3 +1,6 @@
+import { preferences } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
+
 export interface GameRecord {
   gameId: string;
   timestamp: number;
@@ -19,13 +22,19 @@ export interface PlayerStatistics {
   worstScore: number;
 }
 
+export interface LeaderboardItem {
+  playerId: string;
+  stats: PlayerStatistics;
+}
+
 export class StatisticsManager {
   private static instance: StatisticsManager;
   private records: GameRecord[] = [];
   private playerStats: Map<string, PlayerStatistics> = new Map();
+  private dataPrefs: preferences.Preferences | null = null;
+  private initialized: boolean = false;
 
   private constructor() {
-    this.loadFromStorage();
   }
 
   static getInstance(): StatisticsManager {
@@ -33,6 +42,17 @@ export class StatisticsManager {
       StatisticsManager.instance = new StatisticsManager();
     }
     return StatisticsManager.instance;
+  }
+
+  async init(context: common.Context): Promise<void> {
+    if (this.initialized) return;
+    try {
+      this.dataPrefs = await preferences.getPreferences(context, 'mahjong_stats');
+      await this.loadFromStorage();
+      this.initialized = true;
+    } catch (e) {
+      console.error('StatisticsManager init failed:', e);
+    }
   }
 
   // 记录游戏结果
@@ -61,8 +81,8 @@ export class StatisticsManager {
         totalScore: 0,
         averageScore: 0,
         winRate: 0,
-        bestScore: -Infinity,
-        worstScore: Infinity
+        bestScore: 0,
+        worstScore: 0
       };
     }
 
@@ -77,11 +97,16 @@ export class StatisticsManager {
       stats.drawCount++;
     }
 
-    if (score > stats.bestScore) {
+    if (stats.totalGames === 1) {
       stats.bestScore = score;
-    }
-    if (score < stats.worstScore) {
       stats.worstScore = score;
+    } else {
+      if (score > stats.bestScore) {
+        stats.bestScore = score;
+      }
+      if (score < stats.worstScore) {
+        stats.worstScore = score;
+      }
     }
 
     stats.averageScore = stats.totalScore / stats.totalGames;
@@ -101,11 +126,11 @@ export class StatisticsManager {
   }
 
   // 获取排行榜
-  getLeaderboard(): Array<{ playerId: string; stats: PlayerStatistics }> {
-    const leaderboard: Array<{ playerId: string; stats: PlayerStatistics }> = [];
+  getLeaderboard(): Array<LeaderboardItem> {
+    const leaderboard: Array<LeaderboardItem> = [];
     
     this.playerStats.forEach((stats: PlayerStatistics, playerId: string) => {
-      const item: { playerId: string; stats: PlayerStatistics } = { playerId: playerId, stats: stats };
+      const item: LeaderboardItem = { playerId: playerId, stats: stats };
       leaderboard.push(item);
     });
 
@@ -121,19 +146,37 @@ export class StatisticsManager {
   }
 
   // 保存到本地存储
-  private saveToStorage(): void {
+  private async saveToStorage(): Promise<void> {
+    if (!this.dataPrefs) return;
     try {
-      console.info('统计数据已保存');
+      await this.dataPrefs.put('records', JSON.stringify(this.records));
+      const statsObj: Record<string, PlayerStatistics> = {};
+      this.playerStats.forEach((value, key) => {
+        statsObj[key] = value;
+      });
+      await this.dataPrefs.put('playerStats', JSON.stringify(statsObj));
+      await this.dataPrefs.flush();
     } catch (e) {
       console.error('保存统计数据失败:', e);
     }
   }
 
   // 从本地存储加载
-  private loadFromStorage(): void {
+  private async loadFromStorage(): Promise<void> {
+    if (!this.dataPrefs) return;
     try {
-      // TODO: 从 Preferences 或 localStorage 加载
-      console.info('统计数据已加载');
+      const recordsStr = await this.dataPrefs.get('records', '[]') as string;
+      const playerStatsStr = await this.dataPrefs.get('playerStats', '{}') as string;
+
+      if (recordsStr) {
+        this.records = JSON.parse(recordsStr);
+      }
+      if (playerStatsStr) {
+        const statsObj = JSON.parse(playerStatsStr) as Record<string, PlayerStatistics>;
+        Object.keys(statsObj).forEach(key => {
+          this.playerStats.set(key, statsObj[key]);
+        });
+      }
     } catch (e) {
       console.error('加载统计数据失败:', e);
     }

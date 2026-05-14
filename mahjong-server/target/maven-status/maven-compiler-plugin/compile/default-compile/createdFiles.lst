@@ -1,9 +1,11 @@
 com\mj\server\MahjongServerApplication.class
 com\mj\server\model\Player.class
+com\mj\server\ai\AIPlayer.class
 com\mj\server\controller\GameController.class
 com\mj\server\service\RoomService.class
 com\mj\server\config\WebSocketConfig.class
 com\mj\server\handler\GameWebSocketHandler.class
 com\mj\server\model\Room.class
+com\mj\server\ai\AIPlayer$Difficulty.class
 com\mj\server\model\GamePlayer.class
 com\mj\server\model\Game.class

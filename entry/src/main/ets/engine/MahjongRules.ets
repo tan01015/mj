@@ -94,7 +94,7 @@ export class MahjongRules {
   }
 
   // 七对子判断
-  private static isSevenPairs(hand: number[]): boolean {
+  static isSevenPairs(hand: number[]): boolean {
     if (hand.length !== 14) return false;
     
     const tileCount = new Map<number, number>();
@@ -188,26 +188,9 @@ export class MahjongRules {
     return count >= 2;
   }
 
-  // 检查是否可以吃牌
+  // 检查是否可以吃牌（已禁用）
   static canChow(hand: number[], tile: number): boolean {
-    const tileInfo = MahjongRules.getTileInfo(tile);
-    if (!tileInfo || tileInfo.type === TileType.HONOR || tileInfo.type === TileType.FLOWER) {
-      return false;
-    }
-
-    // 检查可能的顺子组合
-    const possibleCombinations = [
-      [tile - 2, tile - 1, tile],  // 前两张
-      [tile - 1, tile, tile + 1],  // 中间
-      [tile, tile + 1, tile + 2]   // 后两张
-    ];
-
-    for (const combo of possibleCombinations) {
-      if (combo.every(t => t >= 1 && t <= 29 && hand.includes(t))) {
-        return true;
-      }
-    }
-    
+    // 本游戏不支持吃牌
     return false;
   }
 
@@ -221,17 +204,15 @@ export class MahjongRules {
   static getAvailableActions(hand: number[], lastTile: number): string[] {
     const actions: string[] = [];
     
+    // 优先级：胡 > 杠 > 碰（没有吃牌）
     if (MahjongRules.canWin(hand, lastTile)) {
       actions.push('WIN');
     }
-    if (MahjongRules.canPong(hand, lastTile)) {
-      actions.push('PONG');
-    }
-    if (MahjongRules.canChow(hand, lastTile)) {
-      actions.push('CHOW');
-    }
     if (MahjongRules.canKong(hand, lastTile)) {
       actions.push('KONG');
+    }
+    if (MahjongRules.canPong(hand, lastTile)) {
+      actions.push('PONG');
     }
     
     return actions;

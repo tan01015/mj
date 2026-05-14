@@ -5,7 +5,7 @@ import { MahjongRules, MahjongTile } from '../engine/MahjongRules';
 
 export enum AIDifficulty {
   EASY = 'easy',
-  MEDIUM = 'medium', 
+  MEDIUM = 'medium',
   HARD = 'hard'
 }
 
@@ -27,17 +27,15 @@ export class AdvancedAI {
   }
 
   // 设置游戏状态
-  setGameState(state: object): void {
+  setGameState(state: Record<string, Object>): void {
     this.gameState = state;
   }
 
   // AI决策主函数
-  makeDecision(hand: number[], lastTile?: number): AIDecision {
+  makeDecision(hand: number[], lastTile?: number, melds?: number[][]): AIDecision {
     if (!lastTile) {
-      // 主动出牌
       return this.decideDiscard(hand);
     } else {
-      // 响应其他玩家出牌
       return this.decideResponse(hand, lastTile);
     }
   }
@@ -45,7 +43,7 @@ export class AdvancedAI {
   // 决定出哪张牌
   private decideDiscard(hand: number[]): AIDecision {
     const sortedHand = [...hand].sort((a, b) => a - b);
-    
+
     // 根据难度选择策略
     switch (this.difficulty) {
       case AIDifficulty.EASY:
@@ -75,7 +73,7 @@ export class AdvancedAI {
     // 优先出孤张和字牌
     const tileScores = this.calculateTileScores(hand);
     const worstTile = this.findWorstTile(tileScores);
-    
+
     return {
       action: 'DISCARD',
       tile: worstTile,
@@ -88,7 +86,7 @@ export class AdvancedAI {
     // 基于概率计算和策略树
     const tileScores = this.calculateAdvancedScores(hand);
     const bestDiscard = this.findOptimalDiscard(tileScores, hand);
-    
+
     return {
       action: 'DISCARD',
       tile: bestDiscard,
@@ -99,11 +97,11 @@ export class AdvancedAI {
   // 计算牌的价值分数
   private calculateTileScores(hand: number[]): Map<number, number> {
     const scores = new Map<number, number>();
-    
+
     hand.forEach(tile => {
       let score = 0;
       const tileInfo = MahjongRules.getTileInfo(tile);
-      
+
       if (!tileInfo) {
         scores.set(tile, 0);
         return;
@@ -112,7 +110,7 @@ export class AdvancedAI {
       // 基础分数
       switch (tileInfo.type) {
         case 0: // CHARACTER
-        case 1: // BAMBOO  
+        case 1: // BAMBOO
         case 2: // DOT
           score = this.calculateNumberTileScore(hand, tile);
           break;
@@ -123,10 +121,10 @@ export class AdvancedAI {
           score = 0.1; // 花牌价值低
           break;
       }
-      
+
       scores.set(tile, score);
     });
-    
+
     return scores;
   }
 
@@ -134,34 +132,34 @@ export class AdvancedAI {
   private calculateNumberTileScore(hand: number[], tile: number): number {
     let score = 0;
     const count = hand.filter(t => t === tile).length;
-    
+
     // 对子/刻子价值高
     if (count >= 2) score += count * 2;
-    
+
     // 检查是否形成顺子
     const tileInfo = MahjongRules.getTileInfo(tile);
     if (tileInfo && tileInfo.value <= 7) {
       const hasSequence = hand.includes(tile + 1) && hand.includes(tile + 2);
       if (hasSequence) score += 3;
     }
-    
+
     // 边张价值低
     if (tileInfo && (tileInfo.value === 1 || tileInfo.value === 9)) {
       score -= 1;
     }
-    
+
     return Math.max(score, 0.1);
   }
 
   // 计算字牌分数
   private calculateHonorTileScore(hand: number[], tile: number): number {
     const count = hand.filter(t => t === tile).length;
-    
+
     // 字牌只有成对/刻子才有价值
     if (count >= 2) {
       return count * 3;
     }
-    
+
     return 0.1; // 单张字牌价值低
   }
 
@@ -169,28 +167,28 @@ export class AdvancedAI {
   private findWorstTile(scores: Map<number, number>): number {
     let worstTile = 0;
     let worstScore = Infinity;
-    
+
     scores.forEach((score, tile) => {
       if (score < worstScore) {
         worstScore = score;
         worstTile = tile;
       }
     });
-    
+
     return worstTile;
   }
 
   // 高级分数计算
   private calculateAdvancedScores(hand: number[]): Map<number, number> {
     const scores = this.calculateTileScores(hand);
-    
+
     // 考虑听牌概率
     hand.forEach(tile => {
       const currentScore = scores.get(tile) || 0;
       const tingProbability = this.calculateTingProbability(hand, tile);
       scores.set(tile, currentScore + tingProbability * 5);
     });
-    
+
     return scores;
   }
 
@@ -199,14 +197,14 @@ export class AdvancedAI {
     const simulatedHand = hand.filter(t => t !== discardTile);
     let tingCount = 0;
     const totalTiles = 34; // 麻将牌总数
-    
+
     // 模拟所有可能的摸牌
     for (let tile = 1; tile <= totalTiles; tile++) {
       if (MahjongRules.canWin(simulatedHand, tile)) {
         tingCount++;
       }
     }
-    
+
     return tingCount / totalTiles;
   }
 
@@ -214,38 +212,74 @@ export class AdvancedAI {
   private findOptimalDiscard(scores: Map<number, number>, hand: number[]): number {
     // 考虑安全性和进攻性
     const safeTiles = this.identifySafeTiles(hand);
-    
+
     let bestTile = 0;
     let bestScore = -Infinity;
-    
+
     scores.forEach((score, tile) => {
       // 安全牌加分
       if (safeTiles.has(tile)) {
         score += 2;
       }
-      
+
       if (score > bestScore) {
         bestScore = score;
         bestTile = tile;
       }
     });
-    
+
     return bestTile;
   }
 
   // 识别安全牌
   private identifySafeTiles(hand: number[]): Set<number> {
     const safeTiles = new Set<number>();
-    
-    // 这里可以添加更复杂的安全牌识别逻辑
-    // 暂时返回空集
+
+    const tileCounts = new Map<number, number>();
+    for (const tile of hand) {
+      tileCounts.set(tile, (tileCounts.get(tile) || 0) + 1);
+    }
+
+    // 孤张字牌最安全
+    tileCounts.forEach((count: number, tile: number) => {
+      if (count === 1 && tile >= 31 && tile <= 37) {
+        safeTiles.add(tile);
+      }
+    });
+
+    // 孤张边张(1和9)也较安全
+    tileCounts.forEach((count: number, tile: number) => {
+      if (count === 1 && !safeTiles.has(tile)) {
+        const value = tile <= 9 ? tile : (tile <= 19 ? tile - 10 : tile - 20);
+        if (value === 1 || value === 9) {
+          safeTiles.add(tile);
+        }
+      }
+    });
+
+    // 任意孤张
+    if (safeTiles.size === 0) {
+      tileCounts.forEach((count: number, tile: number) => {
+        if (count === 1) {
+          safeTiles.add(tile);
+        }
+      });
+    }
+
+    // 兜底
+    if (safeTiles.size === 0) {
+      for (const tile of hand) {
+        safeTiles.add(tile);
+      }
+    }
+
     return safeTiles;
   }
 
   // 决定响应动作
   private decideResponse(hand: number[], lastTile: number): AIDecision {
     const actions = MahjongRules.getAvailableActions(hand, lastTile);
-    
+
     if (actions.length === 0) {
       return { action: 'PASS', confidence: 1.0 };
     }
@@ -269,13 +303,19 @@ export class AdvancedAI {
     if (actions.includes('WIN')) {
       return { action: 'WIN', confidence: 0.8 };
     }
-    
+
     const randomAction = actions[Math.floor(Math.random() * actions.length)];
-    return {
-      action: randomAction,
+    let actionType: 'DISCARD' | 'PONG' | 'CHOW' | 'KONG' | 'WIN' | 'PASS' = 'PASS';
+    if (randomAction === 'DISCARD' || randomAction === 'PONG' || randomAction === 'CHOW' ||
+        randomAction === 'KONG' || randomAction === 'WIN' || randomAction === 'PASS') {
+      actionType = randomAction;
+    }
+    const decision: AIDecision = {
+      action: actionType,
       targetTile: lastTile,
       confidence: 0.4
     };
+    return decision;
   }
 
   // 中等响应策略
@@ -284,11 +324,11 @@ export class AdvancedAI {
     if (actions.includes('WIN')) {
       return { action: 'WIN', confidence: 0.9 };
     }
-    
+
     if (actions.includes('KONG')) {
       return { action: 'KONG', targetTile: lastTile, confidence: 0.8 };
     }
-    
+
     if (actions.includes('PONG')) {
       // 检查碰牌是否有利
       const benefit = this.assessPongBenefit(hand, lastTile);
@@ -296,7 +336,7 @@ export class AdvancedAI {
         return { action: 'PONG', targetTile: lastTile, confidence: 0.7 };
       }
     }
-    
+
     if (actions.includes('CHOW')) {
       // 检查吃牌是否有利
       const benefit = this.assessChowBenefit(hand, lastTile);
@@ -304,7 +344,7 @@ export class AdvancedAI {
         return { action: 'CHOW', targetTile: lastTile, confidence: 0.6 };
       }
     }
-    
+
     return { action: 'PASS', confidence: 0.8 };
   }
 
@@ -312,53 +352,57 @@ export class AdvancedAI {
   private hardResponse(actions: string[], lastTile: number, hand: number[]): AIDecision {
     // 基于概率计算的最优决策
     const actionScores = new Map<string, number>();
-    
+
     actions.forEach(action => {
       let score = 0;
-      
+
       switch (action) {
         case 'WIN':
-          score = this.calculateWinScore(hand, lastTile);
+          score = this.calculateWinScore();
           break;
         case 'KONG':
-          score = this.calculateKongScore(hand, lastTile);
+          score = this.calculateKongScore();
           break;
         case 'PONG':
           score = this.calculatePongScore(hand, lastTile);
           break;
         case 'CHOW':
-          score = this.calculateChowScore(hand, lastTile);
+          score = this.calculateChowScore();
           break;
       }
-      
+
       actionScores.set(action, score);
     });
-    
+
     // 选择分数最高的动作
-    let bestAction = 'PASS';
+    let bestAction: 'DISCARD' | 'PONG' | 'CHOW' | 'KONG' | 'WIN' | 'PASS' = 'PASS';
     let bestScore = 0;
-    
+
     actionScores.forEach((score, action) => {
       if (score > bestScore) {
         bestScore = score;
-        bestAction = action;
+        if (action === 'DISCARD' || action === 'PONG' || action === 'CHOW' ||
+            action === 'KONG' || action === 'WIN' || action === 'PASS') {
+          bestAction = action;
+        }
       }
     });
-    
-    return {
+
+    const decision: AIDecision = {
       action: bestAction,
       targetTile: lastTile,
       confidence: bestScore
     };
+    return decision;
   }
 
   // 计算胡牌收益
-  private calculateWinScore(hand: number[], lastTile: number): number {
+  private calculateWinScore(): number {
     return 1.0; // 胡牌总是最优选择
   }
 
   // 计算杠牌收益
-  private calculateKongScore(hand: number[], lastTile: number): number {
+  private calculateKongScore(): number {
     return 0.8; // 杠牌收益高
   }
 
@@ -369,7 +413,7 @@ export class AdvancedAI {
   }
 
   // 计算吃牌收益
-  private calculateChowScore(hand: number[], lastTile: number): number {
+  private calculateChowScore(): number {
     return 0.5; // 吃牌收益中等
   }
 
@@ -383,7 +427,7 @@ export class AdvancedAI {
   private assessChowBenefit(hand: number[], tile: number): number {
     const tileInfo = MahjongRules.getTileInfo(tile);
     if (!tileInfo || tileInfo.type === 3) return 0; // 字牌不能吃
-    
+
     // 检查吃牌后是否有利于听牌
     return 0.6;
   }

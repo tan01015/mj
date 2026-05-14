@@ -1,6 +1,7 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { statisticsManager } from '../utils/StatisticsManager';
 
 const DOMAIN = 0x0000;
 
@@ -11,6 +12,10 @@ export default class EntryAbility extends UIAbility {
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
+
+    // 初始化统计管理器
+    statisticsManager.init(this.context);
+
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 
@@ -28,6 +33,27 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, 'testTag', 'Succeeded in loading the content.');
+      
+      // 实现全屏显示，隐藏底部导航栏
+      try {
+        windowStage.getMainWindow().then((win) => {
+          // 设置全屏模式
+          win.setWindowLayoutFullScreen(true, (err) => {
+            if (err) {
+              hilog.error(DOMAIN, 'testTag', 'Failed to set full screen. Cause: %{public}s', JSON.stringify(err));
+            }
+          });
+          
+          // 隐藏底部导航栏
+          win.setWindowSystemBarEnable([], (err) => {
+            if (err) {
+              hilog.error(DOMAIN, 'testTag', 'Failed to hide system bar. Cause: %{public}s', JSON.stringify(err));
+            }
+          });
+        });
+      } catch (e) {
+        hilog.error(DOMAIN, 'testTag', 'Set full screen error: %{public}s', JSON.stringify(e));
+      }
     });
   }
 

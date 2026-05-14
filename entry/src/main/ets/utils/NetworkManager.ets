@@ -14,8 +14,22 @@ export interface MessageData {
   accepted?: boolean;
   currentPlayer?: number;
   remainingTiles?: number;
+  dealerSeat?: number;
   winner?: number;
   scores?: Record<string, number>;
+  waitingForReaction?: boolean;
+  discardedTile?: number;
+  discardedBy?: number;
+  reactions?: Record<string, Array<string>>;
+  melds?: Record<string, Array<Array<number>>>;
+  discarded?: Record<string, Array<number>>;
+  gameId?: string;
+  selfDrawWinAvailable?: boolean;
+  selfDrawKongAvailable?: boolean;
+  gameEnded?: boolean;
+  lastAction?: string;
+  lastActionSeat?: number;
+  lastActionTile?: number;
 }
 
 export interface Player {
@@ -34,15 +48,24 @@ export interface SendData {
   ready?: boolean;
   action?: string;
   tile?: number;
+  seat?: number;
 }
 
 export class NetworkManager {
   private ws: webSocket.WebSocket | null = null;
-  private serverUrl: string = 'ws://192.168.189.217:8082/ws/game';
+  private baseHost: string = '192.168.189.217:8082';
   private messageHandlers: Map<string, Array<(data: MessageData) => void>> = new Map();
   private isConnected: boolean = false;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
+
+  get serverUrl(): string {
+    return `ws://${this.baseHost}/ws/game`;
+  }
+
+  get httpBaseUrl(): string {
+    return `http://${this.baseHost}`;
+  }
 
   connect(): Promise<boolean> {
     return new Promise((resolve: (value: boolean) => void, reject: (reason: Error) => void) => {
@@ -122,6 +145,7 @@ export class NetworkManager {
       if (data.ready !== undefined) messageObj['ready'] = data.ready;
       if (data.action !== undefined) messageObj['action'] = data.action;
       if (data.tile !== undefined) messageObj['tile'] = data.tile;
+      if (data.seat !== undefined) messageObj['seat'] = data.seat;
       const message = JSON.stringify(messageObj);
       try {
         this.ws.send(message);
@@ -175,8 +199,12 @@ export class NetworkManager {
     return this.isConnected;
   }
 
-  setServerUrl(url: string): void {
-    this.serverUrl = url;
+  setServerHost(host: string): void {
+    this.baseHost = host;
+  }
+
+  getServerHost(): string {
+    return this.baseHost;
   }
 }
 

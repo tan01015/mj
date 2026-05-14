@@ -6,6 +6,8 @@
     "pages/LobbyPage",
     "pages/GameRoomPage",
     "pages/RoomPage",
-    "pages/GamePage"
+    "pages/GamePage",
+    "pages/SinglePlayerPage",
+    "pages/SinglePlayerGamePage"
   ]
 }

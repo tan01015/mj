@@ -21,6 +21,12 @@ export interface GamePlayer {
   online: boolean;
 }
 
+export interface LastActionInfo {
+  player: number;
+  action: string;
+  tile?: number;
+}
+
 export interface GameState {
   phase: GamePhase;
   players: GamePlayer[];
@@ -30,12 +36,10 @@ export interface GameState {
   remainingTiles: number;
   wall: number[];
   lastDiscardedTile?: number;
-  lastAction?: {
-    player: number;
-    action: string;
-    tile?: number;
-  };
+  lastAction?: LastActionInfo;
   winner?: number;
+  waitingForReaction: boolean;
+  discarderSeat: number;
 }
 
 export class MahjongGame {
@@ -50,7 +54,9 @@ export class MahjongGame {
       dealer: 0,
       round: 1,
       remainingTiles: 136,
-      wall: []
+      wall: [],
+      waitingForReaction: false,
+      discarderSeat: -1
     };
   }
 
@@ -68,17 +74,35 @@ export class MahjongGame {
   private initializeTileWall(): void {
     this.tileWall = [];
     
-    // 创建麻将牌 (1-37, 41-48)
-    for (let i = 1; i <= 37; i++) {
-      if (i <= 29 || (i >= 31 && i <= 37)) {
-        // 添加4张相同的牌
-        for (let j = 0; j < 4; j++) {
-          this.tileWall.push(i);
-        }
+    // 万牌 (1-9)，每种4张
+    for (let i = 1; i <= 9; i++) {
+      for (let j = 0; j < 4; j++) {
+        this.tileWall.push(i);
       }
     }
     
-    // 添加花牌 (41-48)
+    // 条牌 (11-19)，每种4张
+    for (let i = 11; i <= 19; i++) {
+      for (let j = 0; j < 4; j++) {
+        this.tileWall.push(i);
+      }
+    }
+    
+    // 筒牌 (21-29)，每种4张
+    for (let i = 21; i <= 29; i++) {
+      for (let j = 0; j < 4; j++) {
+        this.tileWall.push(i);
+      }
+    }
+    
+    // 字牌 (31-37: 东南西北中发白)，每种4张
+    for (let i = 31; i <= 37; i++) {
+      for (let j = 0; j < 4; j++) {
+        this.tileWall.push(i);
+      }
+    }
+    
+    // 花牌 (41-48)，每种1张（可选，根据规则）
     for (let i = 41; i <= 48; i++) {
       this.tileWall.push(i);
     }
@@ -93,7 +117,9 @@ export class MahjongGame {
   private shuffleTiles(): void {
     for (let i = this.tileWall.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [this.tileWall[i], this.tileWall[j]] = [this.tileWall[j], this.tileWall[i]];
+      const temp = this.tileWall[i];
+      this.tileWall[i] = this.tileWall[j];
+      this.tileWall[j] = temp;
     }
   }
 
@@ -145,68 +171,39 @@ export class MahjongGame {
     if (!player || this.state.currentPlayer !== playerSeat) {
       return false;
     }
-    
+
+    if (this.state.waitingForReaction) {
+      return false;
+    }
+
     const tileIndex = player.hand.indexOf(tile);
     if (tileIndex === -1) {
       return false;
     }
-    
+
     player.hand.splice(tileIndex, 1);
     player.discarded.push(tile);
     this.state.lastDiscardedTile = tile;
-    
+
     // 记录最后动作
-    this.state.lastAction = {
+    const discardAction: LastActionInfo = {
       player: playerSeat,
       action: 'DISCARD',
       tile: tile
     };
-    
-    // 轮到下一位玩家
-    this.nextPlayer();
-    
-    return true;
-  }
+    this.state.lastAction = discardAction;
 
-  // 玩家吃牌
-  chow(playerSeat: number, discardedTile: number, position: number): boolean {
-    const player = this.getPlayer(playerSeat);
-    if (!player || !this.state.lastDiscardedTile) {
-      return false;
+    // 检查手牌是否为空（所有牌都组成了面子），为空则胜利
+    if (player.hand.length === 0) {
+      this.state.winner = playerSeat;
+      this.endGame();
+      return true;
     }
-    
-    // 检查是否可以吃牌
-    if (!MahjongRules.canChow(player.hand, discardedTile)) {
-      return false;
-    }
-    
-    // 创建顺子
-    const chowTiles = this.getChowTiles(player.hand, discardedTile, position);
-    if (!chowTiles) {
-      return false;
-    }
-    
-    // 从手牌移除顺子牌
-    chowTiles.forEach(tile => {
-      const index = player.hand.indexOf(tile);
-      if (index !== -1) {
-        player.hand.splice(index, 1);
-      }
-    });
-    
-    // 添加牌组
-    player.melds.push(chowTiles);
-    
-    // 记录动作
-    this.state.lastAction = {
-      player: playerSeat,
-      action: 'CHOW',
-      tile: discardedTile
-    };
-    
-    // 吃牌玩家成为当前玩家
-    this.state.currentPlayer = playerSeat;
-    
+
+    // 不自动推进到下一位玩家，先等待所有人响应（碰/杠/胡）
+    this.state.waitingForReaction = true;
+    this.state.discarderSeat = playerSeat;
+
     return true;
   }
 
@@ -235,14 +232,26 @@ export class MahjongGame {
     player.melds.push([discardedTile, discardedTile, discardedTile]);
     
     // 记录动作
-    this.state.lastAction = {
+    const pongAction: LastActionInfo = {
       player: playerSeat,
       action: 'PONG',
       tile: discardedTile
     };
+    this.state.lastAction = pongAction;
     
     // 碰牌玩家成为当前玩家
     this.state.currentPlayer = playerSeat;
+    
+    // 碰牌后需要摸一张牌
+    if (this.tileWall.length > 0) {
+      const newTile = this.tileWall.pop()!;
+      player.hand.push(newTile);
+      player.hand.sort((a, b) => a - b);
+      this.state.remainingTiles = this.tileWall.length;
+    } else {
+      // 牌墙为空，流局
+      this.endGame();
+    }
     
     return true;
   }
@@ -277,11 +286,12 @@ export class MahjongGame {
     player.melds.push([tileToKong, tileToKong, tileToKong, tileToKong]);
     
     // 记录动作
-    this.state.lastAction = {
+    const kongAction: LastActionInfo = {
       player: playerSeat,
       action: 'KONG',
       tile: tileToKong
     };
+    this.state.lastAction = kongAction;
     
     // 杠牌后摸一张牌
     if (this.tileWall.length > 0) {
@@ -315,38 +325,14 @@ export class MahjongGame {
     this.endGame();
     
     // 记录动作
-    this.state.lastAction = {
+    const winAction: LastActionInfo = {
       player: playerSeat,
       action: 'WIN',
       tile: winningTile
     };
+    this.state.lastAction = winAction;
     
     return true;
-  }
-
-  // 获取吃牌的三张牌
-  private getChowTiles(hand: number[], discardedTile: number, position: number): number[] | null {
-    const tileInfo = MahjongRules.getTileInfo(discardedTile);
-    if (!tileInfo || tileInfo.type === 3) { // HONOR
-      return null;
-    }
-    
-    const possibleCombinations = [
-      [discardedTile - 2, discardedTile - 1, discardedTile],
-      [discardedTile - 1, discardedTile, discardedTile + 1],
-      [discardedTile, discardedTile + 1, discardedTile + 2]
-    ];
-    
-    if (position < 0 || position >= possibleCombinations.length) {
-      return null;
-    }
-    
-    const combo = possibleCombinations[position];
-    if (combo.every(t => hand.includes(t))) {
-      return combo;
-    }
-    
-    return null;
   }
 
   // 计算胡牌分数
@@ -399,7 +385,9 @@ export class MahjongGame {
       dealer: 0,
       round: 1,
       remainingTiles: 136,
-      wall: []
+      wall: [],
+      waitingForReaction: false,
+      discarderSeat: -1
     };
     this.tileWall = [];
   }
@@ -430,6 +418,101 @@ export class MahjongGame {
   getPlayerMelds(seat: number): number[][] {
     const player = this.getPlayer(seat);
     return player ? [...player.melds] : [];
+  }
+
+  // ==================== 反应系统 ====================
+
+  // 是否在等待反应
+  isWaitingForReaction(): boolean {
+    return this.state.waitingForReaction;
+  }
+
+  // 获取出牌者的座位
+  getDiscarderSeat(): number {
+    return this.state.discarderSeat;
+  }
+
+  // 获取某个玩家对当前弃牌可用的反应动作
+  getAvailableReactions(seat: number): string[] {
+    if (!this.state.waitingForReaction || this.state.lastDiscardedTile === undefined) {
+      return [];
+    }
+
+    const player = this.getPlayer(seat);
+    if (!player) return [];
+
+    // 不吃自己的牌
+    if (seat === this.state.discarderSeat) return [];
+
+    const tile = this.state.lastDiscardedTile;
+    const actions: string[] = [];
+
+    // 优先级：胡 > 杠 > 碰（没有吃牌）
+    if (MahjongRules.canWin(player.hand, tile)) {
+      actions.push('WIN');
+    }
+    if (MahjongRules.canKong(player.hand, tile)) {
+      actions.push('KONG');
+    }
+    if (MahjongRules.canPong(player.hand, tile)) {
+      actions.push('PONG');
+    }
+
+    return actions;
+  }
+
+  // 玩家执行反应动作
+  resolveReaction(playerSeat: number, action: string): boolean {
+    if (!this.state.waitingForReaction || this.state.lastDiscardedTile === undefined) {
+      return false;
+    }
+
+    const player = this.getPlayer(playerSeat);
+    if (!player) return false;
+
+    const tile = this.state.lastDiscardedTile;
+    let success = false;
+
+    switch (action) {
+      case 'WIN':
+        success = this.win(playerSeat, tile);
+        if (success) {
+          this.state.waitingForReaction = false;
+        }
+        break;
+      case 'KONG':
+        success = this.kong(playerSeat, tile);
+        if (success) {
+          this.state.waitingForReaction = false;
+          this.state.currentPlayer = playerSeat;
+        }
+        break;
+      case 'PONG':
+        success = this.pong(playerSeat, tile);
+        if (success) {
+          this.state.waitingForReaction = false;
+          this.state.currentPlayer = playerSeat;
+        }
+        break;
+      default:
+        break;
+    }
+
+    return success;
+  }
+
+  // 玩家跳过反应（PASS）
+  passReaction(playerSeat: number): void {
+    // 仅标记，不推进——调用方需要等所有人PASS后调用advanceToNextPlayer
+  }
+
+  // 推进到下一位玩家
+  advanceToNextPlayer(): void {
+    if (this.state.waitingForReaction) {
+      this.state.waitingForReaction = false;
+      // 推进到出牌者的下家
+      this.state.currentPlayer = (this.state.discarderSeat + 1) % 4;
+    }
   }
 
   // 获取玩家分数

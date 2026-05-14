@@ -1,5 +1,6 @@
 package com.mj.server.service;
 
+import com.mj.server.ai.AIPlayer;
 import com.mj.server.model.Game;
 import com.mj.server.model.GamePlayer;
 import com.mj.server.model.Player;
@@ -13,20 +14,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RoomService {
     private final Map<String, Room> rooms = new ConcurrentHashMap<>();
     private final Map<String, Game> games = new ConcurrentHashMap<>();
+    private final Map<String, Game> singlePlayerGames = new ConcurrentHashMap<>();
+    private final Map<String, List<AIPlayer>> singlePlayerAIPlayers = new ConcurrentHashMap<>();
+    private final Map<String, List<Thread>> singlePlayerAIThreads = new ConcurrentHashMap<>();
     
-    public Room createRoom(String hostId, String gameMode, int maxPlayers) {
+    public Room createRoom(String hostId, String playerName, String gameMode, int maxPlayers) {
         String roomId = generateRoomId();
         Room room = new Room();
         room.setRoomId(roomId);
         room.setHostId(hostId);
         room.setGameMode(gameMode);
         room.setMaxPlayers(maxPlayers);
-        
-        // 添加房主
-        Player host = new Player(hostId, "玩家" + hostId.substring(0, 4));
+
+        String name = (playerName != null && !playerName.isEmpty()) ? playerName : "玩家";
+        Player host = new Player(hostId, name);
         host.setSeat(0);
         room.addPlayer(host);
-        
+
         rooms.put(roomId, room);
         return room;
     }
@@ -89,7 +93,86 @@ public class RoomService {
     public Collection<Room> getAllRooms() {
         return rooms.values();
     }
+
+    public Game createSinglePlayerGame(String gameId) {
+        List<GamePlayer> players = new ArrayList<>();
+        for (int seat = 0; seat < 4; seat++) {
+            GamePlayer gp = new GamePlayer(gameId + "-seat" + seat, "玩家" + (seat + 1));
+            gp.setSeat(seat);
+            players.add(gp);
+        }
+        Game game = new Game(gameId, players, true);
+        game.startGame();
+        singlePlayerGames.put(gameId, game);
+        
+        // 启动AI线程（座位1、2、3为AI，座位0为真人玩家）
+        List<AIPlayer> aiPlayers = new ArrayList<>();
+        List<Thread> aiThreads = new ArrayList<>();
+        
+        AIPlayer.Difficulty[] difficulties = {
+            AIPlayer.Difficulty.EASY,
+            AIPlayer.Difficulty.MEDIUM,
+            AIPlayer.Difficulty.HARD
+        };
+        
+        for (int seat = 1; seat <= 3; seat++) {
+            String aiPlayerId = gameId + "-seat" + seat;
+            AIPlayer aiPlayer = new AIPlayer(gameId, aiPlayerId, seat, difficulties[seat - 1], game);
+            aiPlayers.add(aiPlayer);
+            
+            Thread aiThread = new Thread(aiPlayer, "AI-Thread-Seat" + seat);
+            aiThread.setDaemon(true); // 守护线程，主线程结束时自动退出
+            aiThread.start();
+            aiThreads.add(aiThread);
+            
+            System.out.println("[单人模式] 启动AI线程 - 座位: " + seat + ", 难度: " + difficulties[seat - 1]);
+        }
+        
+        singlePlayerAIPlayers.put(gameId, aiPlayers);
+        singlePlayerAIThreads.put(gameId, aiThreads);
+        
+        return game;
+    }
+
+    public Game getSinglePlayerGame(String gameId) {
+        return singlePlayerGames.get(gameId);
+    }
     
+    /**
+     * 停止单人游戏的AI线程
+     */
+    public void stopSinglePlayerAI(String gameId) {
+        List<AIPlayer> aiPlayers = singlePlayerAIPlayers.remove(gameId);
+        List<Thread> aiThreads = singlePlayerAIThreads.remove(gameId);
+        
+        if (aiPlayers != null) {
+            for (AIPlayer ai : aiPlayers) {
+                ai.stop();
+            }
+            System.out.println("[单人模式] 已停止 " + aiPlayers.size() + " 个AI线程");
+        }
+        
+        if (aiThreads != null) {
+            for (Thread thread : aiThreads) {
+                try {
+                    thread.join(1000); // 等待最多1秒
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            System.out.println("[单人模式] AI线程已清理");
+        }
+    }
+    
+    /** 玩家摸牌，返回摸到的牌 */
+    public Integer playerDraw(String roomId, String playerId) {
+        Game game = games.get(roomId);
+        if (game == null || !game.isGameStarted() || game.isGameEnded()) {
+            return null;
+        }
+        return game.drawTile(playerId);
+    }
+
     public boolean playerAction(String roomId, String playerId, String action, Integer tile) {
         Game game = games.get(roomId);
         if (game == null || !game.isGameStarted() || game.isGameEnded()) {
@@ -105,14 +188,31 @@ public class RoomService {
                 }
                 break;
             case "PONG":
-                if (tile != null && game.getLastActionTile() != null) {
-                    return game.pong(playerId, game.getLastActionTile());
+                if (tile != null) {
+                    return game.pong(playerId, tile);
+                }
+                break;
+            case "CHOW":
+                if (tile != null) {
+                    return game.chow(playerId, tile);
+                }
+                break;
+            case "KONG":
+                if (tile != null) {
+                    return game.kong(playerId, tile);
                 }
                 break;
             case "WIN":
                 if (tile != null) {
+                    // 判断是自摸还是点炮
                     boolean isSelfDraw = "DRAW".equals(game.getLastAction());
                     return game.win(playerId, tile, isSelfDraw);
+                }
+                break;
+            case "PASS":
+                // PASS动作只在等待反应时有效
+                if (game.isWaitingForReaction()) {
+                    return game.resolveReaction(playerId, "PASS", null);
                 }
                 break;
         }
