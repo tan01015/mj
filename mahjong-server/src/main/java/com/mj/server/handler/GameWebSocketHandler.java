@@ -238,7 +238,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         System.out.println("================================");
         
         if (roomId != null) {
-            boolean success = roomService.playerAction(roomId, playerId, action, tile);
+            Map<String, Object> actionResult = roomService.playerAction(roomId, playerId, action, tile);
+            boolean success = (Boolean) actionResult.getOrDefault("accepted", false);
             Game game = roomService.getGame(roomId);
 
             // DRAW动作需要返回摸到的牌
@@ -326,7 +327,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         System.out.println("出牌 - 玩家ID: " + playerId + ", 牌: " + tile);
 
         if (roomId != null && tile != null) {
-            boolean success = roomService.playerAction(roomId, playerId, "DISCARD", tile);
+            Map<String, Object> actionResult = roomService.playerAction(roomId, playerId, "DISCARD", tile);
+            boolean success = (Boolean) actionResult.getOrDefault("accepted", false);
             Game game = roomService.getGame(roomId);
 
             Map<String, Object> confirm = new HashMap<>();
@@ -368,7 +370,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         System.out.println("游戏动作 - 玩家ID: " + playerId + ", 动作: " + action + ", 牌: " + tile);
 
         if (roomId != null && action != null) {
-            boolean success = roomService.playerAction(roomId, playerId, action, tile);
+            Map<String, Object> actionResult = roomService.playerAction(roomId, playerId, action, tile);
+            boolean success = (Boolean) actionResult.getOrDefault("accepted", false);
             Game game = roomService.getGame(roomId);
 
             Map<String, Object> confirm = new HashMap<>();
@@ -410,7 +413,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         System.out.println("玩家反应 - 玩家ID: " + playerId + ", 动作: " + action + ", 牌: " + tile);
 
         if (roomId != null && action != null) {
-            boolean success = roomService.playerAction(roomId, playerId, action, tile);
+            Map<String, Object> actionResult = roomService.playerAction(roomId, playerId, action, tile);
+            boolean success = (Boolean) actionResult.getOrDefault("accepted", false);
             Game game = roomService.getGame(roomId);
 
             Map<String, Object> confirm = new HashMap<>();

@@ -52,8 +52,10 @@ public class AIPlayer implements Runnable {
                 // 执行AI决策
                 executeTurn();
                 
-                // 短暂延迟，模拟思考时间
-                Thread.sleep(800 + (long)(Math.random() * 1200));
+                // 根据座位设置不同的等待时间，模拟思考时间
+                // 座位1: 3秒, 座位2: 6秒, 座位3: 9秒
+                long baseDelay = seat * 3000L;
+                Thread.sleep(baseDelay);
             }
         } catch (InterruptedException e) {
             System.out.println("[AI] AI线程被中断 - 座位: " + seat);
