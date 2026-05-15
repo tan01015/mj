@@ -51,11 +51,6 @@ public class AIPlayer implements Runnable {
                 
                 // 执行AI决策
                 executeTurn();
-                
-                // 根据座位设置不同的等待时间，模拟思考时间
-                // 座位1: 3秒, 座位2: 6秒, 座位3: 9秒
-                long baseDelay = seat * 3000L;
-                Thread.sleep(baseDelay);
             }
         } catch (InterruptedException e) {
             System.out.println("[AI] AI线程被中断 - 座位: " + seat);
@@ -114,59 +109,59 @@ public class AIPlayer implements Runnable {
      */
     private void handleReaction() {
         Integer lastTile = game.getLastActionTile();
-        if (lastTile == null) {
-            System.out.println("[AI] 没有最后出的牌，PASS");
-            game.resolveReaction(playerId, "PASS", null);
-            return;
-        }
-        
-        // 检查可用动作
-        List<String> availableActions = new ArrayList<>();
-        
-        // 1. 检查胡牌（优先级最高）
-        if (game.canWin(playerId, lastTile)) {
-            availableActions.add("WIN");
-            System.out.println("[AI] AI可以胡牌 - 座位: " + seat);
-        }
-        
-        // 2. 检查杠牌
-        if (game.canKong(playerId, lastTile)) {
-            availableActions.add("KONG");
-            System.out.println("[AI] AI可以杠牌 - 座位: " + seat);
-        }
-        
-        // 3. 检查碰牌
-        if (game.canPong(playerId, lastTile)) {
-            availableActions.add("PONG");
-            System.out.println("[AI] AI可以碰牌 - 座位: " + seat);
-        }
-        
-        // 吃牌已移除
+            if (lastTile == null) {
+                System.out.println("[AI] 没有最后出的牌，PASS");
+                game.resolveReaction(playerId, "PASS", null);
+                return;
+            }
+            
+            // 检查可用动作
+            List<String> availableActions = new ArrayList<>();
+            
+            // 1. 检查胡牌（优先级最高）
+            if (game.canWin(playerId, lastTile)) {
+                availableActions.add("WIN");
+                System.out.println("[AI] AI可以胡牌 - 座位: " + seat);
+            }
+            
+            // 2. 检查杠牌
+            if (game.canKong(playerId, lastTile)) {
+                availableActions.add("KONG");
+                System.out.println("[AI] AI可以杠牌 - 座位: " + seat);
+            }
+            
+            // 3. 检查碰牌
+            if (game.canPong(playerId, lastTile)) {
+                availableActions.add("PONG");
+                System.out.println("[AI] AI可以碰牌 - 座位: " + seat);
+            }
+            
+            // 吃牌已移除
 
-        if (availableActions.isEmpty()) {
-            // 没有可用动作，PASS
-            System.out.println("[AI] AI无反应 - 座位: " + seat + ", PASS");
-            game.resolveReaction(playerId, "PASS", null);
-            return;
-        }
-        
-        // 根据难度选择动作
-        String chosenAction = selectReactionAction(availableActions, lastTile);
-        
-        if ("WIN".equals(chosenAction)) {
-            System.out.println("[AI] AI选择胡牌 - 座位: " + seat);
-            game.resolveReaction(playerId, "WIN", lastTile);
-        } else if ("KONG".equals(chosenAction)) {
-            System.out.println("[AI] AI选择杠牌 - 座位: " + seat);
-            game.resolveReaction(playerId, "KONG", lastTile);
-        } else if ("PONG".equals(chosenAction)) {
-            System.out.println("[AI] AI选择碰牌 - 座位: " + seat);
-            game.resolveReaction(playerId, "PONG", lastTile);
-        } else {
-            // PASS
-            System.out.println("[AI] AI选择PASS - 座位: " + seat);
-            game.resolveReaction(playerId, "PASS", null);
-        }
+            if (availableActions.isEmpty()) {
+                // 没有可用动作，PASS
+                System.out.println("[AI] AI无反应 - 座位: " + seat + ", PASS");
+                game.resolveReaction(playerId, "PASS", null);
+                return;
+            }
+            
+            // 根据难度选择动作
+            String chosenAction = selectReactionAction(availableActions, lastTile);
+            
+            if ("WIN".equals(chosenAction)) {
+                System.out.println("[AI] AI选择胡牌 - 座位: " + seat);
+                game.resolveReaction(playerId, "WIN", lastTile);
+            } else if ("KONG".equals(chosenAction)) {
+                System.out.println("[AI] AI选择杠牌 - 座位: " + seat);
+                game.resolveReaction(playerId, "KONG", lastTile);
+            } else if ("PONG".equals(chosenAction)) {
+                System.out.println("[AI] AI选择碰牌 - 座位: " + seat);
+                game.resolveReaction(playerId, "PONG", lastTile);
+            } else {
+                // PASS
+                System.out.println("[AI] AI选择PASS - 座位: " + seat);
+                game.resolveReaction(playerId, "PASS", null);
+            }
     }
     
     /**
@@ -235,7 +230,8 @@ public class AIPlayer implements Runnable {
                 // 自摸胡
                 if (game.canSelfDrawWin(playerId)) {
                     System.out.println("[AI] AI自摸胡牌！ - 座位: " + seat);
-                    game.win(playerId, drawnTile, true);
+                    boolean winResult = game.win(playerId, drawnTile, true);
+                    System.out.println("[AI] 胡牌结果: " + winResult + ", 游戏结束: " + game.isGameEnded());
                     return;
                 }
 

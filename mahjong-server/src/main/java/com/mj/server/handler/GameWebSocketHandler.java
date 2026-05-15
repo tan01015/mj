@@ -392,6 +392,8 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                 broadcastMsg.put("seat", getPlayerSeat(roomId, playerId));
                 broadcastMsg.put("currentPlayer", game.getCurrentPlayer());
                 broadcastMsg.put("remainingTiles", game.getRemainingTiles());
+                // 发送所有玩家的手牌数量，用于客户端更新显示
+                broadcastMsg.put("handCounts", getHandCounts(game));
 
                 broadcastToRoom(roomId, "PLAYER_ACTION", broadcastMsg);
 
@@ -498,6 +500,7 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     pushMsg.put("gameEnded", true);
                     pushMsg.put("winner", game.getWinner());
                     pushMsg.put("scores", game.getPlayerScores());
+                    System.out.println("[回调] 游戏结束，获胜者座位: " + game.getWinner());
                 }
                 // 检查是否有对座位0的反应
                 if (game.isWaitingForReaction()) {
@@ -510,6 +513,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
                     pushMsg.put("reactions", reactions);
                 }
                 sendMessage(session, pushMsg);
+                
+                // 如果游戏结束，额外发送GAME_END消息
+                if (game.isGameEnded()) {
+                    sendSinglePlayerGameEnd(session, game);
+                }
             }
         });
 
@@ -589,7 +597,11 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
         response.put("seat", seat);
         response.put("currentPlayer", game.getCurrentPlayer());
         response.put("remainingTiles", game.getRemainingTiles());
-        response.put("hands", game.getAllHands());
+        
+        // 获取最新的手牌数据
+        Map<Integer, List<Integer>> hands = game.getAllHands();
+        System.out.println("[ACTION_CONFIRM] 动作: " + action + ", seat: " + seat + ", 手牌: " + hands);
+        response.put("hands", hands);
         response.put("melds", game.getAllMelds());
         response.put("discarded", game.getAllDiscarded());
 
@@ -758,6 +770,18 @@ public class GameWebSocketHandler extends TextWebSocketHandler {
             result.add(playerMap);
         }
         return result;
+    }
+    
+    /**
+     * 获取所有玩家的手牌数量
+     */
+    private Map<Integer, Integer> getHandCounts(Game game) {
+        Map<Integer, Integer> handCounts = new HashMap<>();
+        Map<Integer, List<Integer>> hands = game.getPlayerHandsBySeat();
+        for (Map.Entry<Integer, List<Integer>> entry : hands.entrySet()) {
+            handCounts.put(entry.getKey(), entry.getValue().size());
+        }
+        return handCounts;
     }
     
     @Override

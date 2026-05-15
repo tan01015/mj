@@ -835,14 +835,17 @@ struct SinglePlayerGamePage {
     // 只有轮到玩家自己时才显示摸牌按钮
     if (this.gameState.currentPlayer !== 0) return false;
     const hand = this.getSeatHandArray(0);
-    return hand.length === 13;
+    // 碰牌后手牌是10张（13-2-1=10），需要摸牌
+    // 正常情况手牌是13张，也需要摸牌
+    return hand.length === 10 || hand.length === 13;
   }
 
   private shouldShowDiscardButton(): boolean {
     // 只有轮到玩家自己时才显示打出按钮
     if (this.gameState.currentPlayer !== 0) return false;
     const hand = this.getSeatHandArray(0);
-    return hand.length >= 14 || hand.length < 13;
+    // 手牌==11张（碰牌后摸牌了）或 ==14张（正常摸牌后）时需要出牌
+    return hand.length === 11 || hand.length === 14;
   }
 
   getTileColor(tileId: number): string {
@@ -893,6 +896,7 @@ struct SinglePlayerGamePage {
   private setupNetworkListeners(): void {
     networkManager.on('SINGLE_PLAYER_ACTION_CONFIRM', (msg: MessageData) => {
       console.info('单人动作确认:', JSON.stringify(msg));
+      console.info('[DEBUG] 收到 action:', msg.action, ', seat:', msg.seat);
       if (msg.accepted === false) {
         try {
           promptAction.showToast({ message: '操作无效' });
@@ -1047,8 +1051,19 @@ struct SinglePlayerGamePage {
 
   private discardTile(): void {
     if (this.selectedTileIndex === -1) return;
+    
     const hand = this.getSeatHandArray(0);
-    const tile = hand[this.selectedTileIndex];
+    let tile: number;
+    
+    // 如果选中的是刚摸到的牌（索引13），直接从原始手牌取最后一张
+    if (this.selectedTileIndex === 13 && hand.length >= 14) {
+      tile = hand[13];
+    } else {
+      // 否则从排序后的手牌中获取
+      const sortedHand = this.getNormalHand(0);
+      tile = sortedHand[this.selectedTileIndex];
+    }
+    
     if (tile === undefined) return;
     
     // 检查打出这张牌后手牌是否为空（获胜判定）

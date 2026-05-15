@@ -50,7 +50,7 @@ public class Game {
         this.playerMelds = new HashMap<>();
         this.playerScores = new HashMap<>();
         this.currentPlayer = 0;
-        this.remainingTiles = singlePlayer ? 108 : 136;
+        this.remainingTiles = 108; // 统一使用108张牌（万、条、筒）
         this.gameStarted = false;
         this.gameEnded = false;
         this.dealer = 0;
@@ -125,12 +125,7 @@ public class Game {
                 deck.add(tile);
             }
         }
-        // 字牌 31-37 (东南西北中发白), 每种4张
-        for (int tile = 31; tile <= 37; tile++) {
-            for (int copy = 0; copy < 4; copy++) {
-                deck.add(tile);
-            }
-        }
+        // 注意：不使用字牌和花牌，与单机模式保持一致（共108张牌）
 
         shuffleDeck();
         wall = new ArrayList<>(deck);
@@ -298,7 +293,9 @@ public class Game {
         // 检查手牌是否为空（所有牌都已组成面子），为空则胜利
         if (hand.isEmpty()) {
             System.out.println("[手牌为空] 玩家ID: " + playerId + " 手牌已空，判定胜利！");
-            win(playerId, tile, false);
+            winner = getPlayerSeat(playerId);
+            gameEnded = true;
+            endGame();
             return true;
         }
 
@@ -876,6 +873,7 @@ public class Game {
         gameEnded = true;
         // 单机模式：游戏结束时通知客户端显示结果
         if (singlePlayer && onHumanTurnCallback != null) {
+            System.out.println("[endGame] 触发回调通知客户端游戏结束");
             onHumanTurnCallback.run();
         }
     }

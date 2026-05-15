@@ -30,6 +30,7 @@ export interface MessageData {
   lastAction?: string;
   lastActionSeat?: number;
   lastActionTile?: number;
+  handCounts?: Record<string, number>;
 }
 
 export interface Player {

@@ -95,17 +95,7 @@ export class MahjongGame {
       }
     }
     
-    // 字牌 (31-37: 东南西北中发白)，每种4张
-    for (let i = 31; i <= 37; i++) {
-      for (let j = 0; j < 4; j++) {
-        this.tileWall.push(i);
-      }
-    }
-    
-    // 花牌 (41-48)，每种1张（可选，根据规则）
-    for (let i = 41; i <= 48; i++) {
-      this.tileWall.push(i);
-    }
+    // 注意：不使用字牌和花牌，与后端保持一致（共108张牌）
     
     // 洗牌
     this.shuffleTiles();
@@ -138,6 +128,14 @@ export class MahjongGame {
       }
       player.hand.sort((a, b) => a - b);
     });
+    
+    // 庄家额外摸一张牌（14张）
+    const dealer = this.getPlayer(this.state.dealer);
+    if (dealer && this.tileWall.length > 0) {
+      const extraTile = this.tileWall.pop()!;
+      dealer.hand.push(extraTile);
+      dealer.hand.sort((a, b) => a - b);
+    }
     
     this.state.remainingTiles = this.tileWall.length;
   }
@@ -240,7 +238,18 @@ export class MahjongGame {
     };
     this.state.lastAction = pongAction;
     
-    // 碰牌玩家成为当前玩家（碰牌后不补牌，直接进入出牌阶段）
+    // 碰牌后摸一张牌
+    if (this.tileWall.length > 0) {
+      const newTile = this.tileWall.pop()!;
+      player.hand.push(newTile);
+      player.hand.sort((a, b) => a - b);
+      this.state.remainingTiles = this.tileWall.length;
+    } else {
+      // 牌墙为空，流局
+      this.endGame();
+    }
+    
+    // 碰牌玩家成为当前玩家
     this.state.currentPlayer = playerSeat;
     return true;
     

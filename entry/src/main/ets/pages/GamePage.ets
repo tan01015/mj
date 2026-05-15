@@ -529,32 +529,39 @@ struct GamePage {
             .fontSize(15)
             .fontColor('#FFD700')
             .margin({ bottom: 10 })
-        } else {
-          Button('摸牌')
-            .width('100%')
-            .height(45)
-            .fontSize(16)
-            .backgroundColor('#4CAF50')
-            .fontColor('#ffffff')
-            .borderRadius(8)
-            .onClick(() => {
-              this.drawTile();
-            })
-            .margin({ bottom: 10 })
-        }
 
-        if (this.selectedTile && this.needDiscard()) {
-          Button(`打出 ${gameManager.getTileDisplayText(this.selectedTile)}`)
-            .width('100%')
-            .height(45)
-            .fontSize(16)
-            .backgroundColor('#2196F3')
-            .fontColor('#ffffff')
-            .borderRadius(8)
-            .onClick(() => {
-              this.discardTile();
-            })
-            .margin({ bottom: 10 })
+          if (this.selectedTile) {
+            Button(`打出 ${gameManager.getTileDisplayText(this.selectedTile)}`)
+              .width('100%')
+              .height(45)
+              .fontSize(16)
+              .backgroundColor('#2196F3')
+              .fontColor('#ffffff')
+              .borderRadius(8)
+              .onClick(() => {
+                this.discardTile();
+              })
+              .margin({ bottom: 10 })
+          }
+        } else {
+          if (this.isAfterPongOrKong()) {
+            Text('请打出一张牌')
+              .fontSize(15)
+              .fontColor('#FFD700')
+              .margin({ bottom: 10 })
+          } else {
+            Button('摸牌')
+              .width('100%')
+              .height(45)
+              .fontSize(16)
+              .backgroundColor('#4CAF50')
+              .fontColor('#ffffff')
+              .borderRadius(8)
+              .onClick(() => {
+                this.drawTile();
+              })
+              .margin({ bottom: 10 })
+          }
         }
       }
 
@@ -715,6 +722,17 @@ struct GamePage {
       if (msg.remainingTiles !== undefined) {
         gameManager.updateRemainingTiles(Number(msg.remainingTiles));
       }
+      // 更新所有玩家的手牌数量
+      if (msg.handCounts) {
+        const handCounts = msg.handCounts as Record<string, number>;
+        const keys = Object.keys(handCounts);
+        for (let i = 0; i < keys.length; i++) {
+          const seat = parseInt(keys[i]);
+          if (!isNaN(seat) && seat !== gameManager.gameState.seat) {
+            gameManager.updateOpponentHandCount(seat, handCounts[keys[i]]);
+          }
+        }
+      }
     });
 
     // 操作确认（自己动作的服务器反馈）
@@ -827,6 +845,10 @@ struct GamePage {
       // 检查游戏结束（AI可能自摸胡牌）
       if (localGame.isGameEnded()) {
         this.handleLocalGameEnd();
+        // 确保显示游戏结束弹窗
+        setTimeout(() => {
+          this.showGameOver = true;
+        }, 500);
         return;
       }
 
@@ -836,7 +858,10 @@ struct GamePage {
         const aiName = gameManager.getPlayerName(currentSeat);
         this.actionNotification = `${aiName} 打出 ${gameManager.getTileDisplayText(discardedTile)}`;
 
-        this.handleAllReactionsAfterDiscard();
+        // 显示AI出牌动画，延迟1秒后再检查其他玩家的反应
+        setTimeout(() => {
+          this.handleAllReactionsAfterDiscard();
+        }, 1000);
       } else {
         // AI没出牌（可能执行了碰/杠但已在processAITurn内部处理了反应）
         gameManager.syncLocalStateToUI();
@@ -854,6 +879,10 @@ struct GamePage {
     if (!localGame.isWaitingForReaction()) {
       if (localGame.isGameEnded()) {
         this.handleLocalGameEnd();
+        // 确保显示游戏结束弹窗
+        setTimeout(() => {
+          this.showGameOver = true;
+        }, 500);
         return;
       }
       gameManager.syncLocalStateToUI();
@@ -943,19 +972,28 @@ struct GamePage {
         gameManager.syncAIHands();
 
         if (localGame.isGameEnded()) {
+          console.info(`[AI胡牌] AI座位${targetSeat}胡牌，准备显示弹窗`);
           this.handleLocalGameEnd();
           return;
         }
-        this.updateGameStatus();
+        
+        // 同步游戏状态以确保AI执行动作后UI更新
+        gameManager.syncLocalStateToUI();
+        gameManager.syncAIHands();
+        
+        // AI执行动作后，延迟1秒再检查下一个玩家
+        setTimeout(() => {
+          this.updateGameStatus();
+        }, 1000);
         return;
       }
     }
 
-    // AI PASS → 延迟后检查下一个
+    // AI PASS → 延迟1秒后检查下一个
     setTimeout(() => {
       gameManager.passLocalReaction();
       this.checkNextAIReaction(aiIndex + 1);
-    }, 600);
+    }, 1000);
   }
 
   // 显示动画
@@ -1009,17 +1047,26 @@ struct GamePage {
 
   // 单机模式游戏结束处理
   private handleLocalGameEnd(): void {
-    if (this.showGameOver) return; // 防止重复调用
+    console.info(`[handleLocalGameEnd] showGameOver=${this.showGameOver}, gameEnded=${this.gameState.gameEnded}`);
+    if (this.showGameOver) {
+      console.info(`[handleLocalGameEnd] 已显示过弹窗，跳过`);
+      return; // 防止重复调用
+    }
 
     const localGame = gameManager.getLocalGame();
-    if (!localGame) return;
+    if (!localGame) {
+      console.info(`[handleLocalGameEnd] localGame为空`);
+      return;
+    }
 
     const gameState = localGame.getState();
     const winner = gameState.winner;
+    console.info(`[handleLocalGameEnd] winner=${winner}, phase=${gameState.phase}`);
 
     if (winner !== undefined) {
       const players = this.gameState.players.map(p => p.nickname);
       const winnerName = gameManager.getPlayerName(winner);
+      console.info(`[handleLocalGameEnd] 赢家: ${winnerName} (座位${winner})`);
 
       const scores: Record<string, number> = {};
       for (const player of gameState.players) {
@@ -1042,6 +1089,7 @@ struct GamePage {
       this.actionNotification = `🏆 ${winnerName} 胡牌获胜！`;
     }
 
+    console.info(`[handleLocalGameEnd] 设置showGameOver=true`);
     this.showGameOver = true;
     this.showAnimationEffect('🎉 胡牌！', '#FFD700');
     this.playSound('win');
@@ -1094,6 +1142,10 @@ struct GamePage {
       const localGame = gameManager.getLocalGame();
       if (localGame && localGame.isGameEnded()) {
         this.handleLocalGameEnd();
+        // 确保显示游戏结束弹窗
+        setTimeout(() => {
+          this.showGameOver = true;
+        }, 500);
         return;
       }
 
@@ -1175,6 +1227,8 @@ struct GamePage {
         animationText = '碰！';
         animationColor = '#3498db';
         this.playSound('pong');
+        // 碰牌后手牌-2（移除2张，摸1张，净-1），但这里只记录碰的动作，实际数量由服务器控制
+        // 客户端不需要手动更新，等待服务器同步
         break;
       case 'CHOW':
         message = `${playerName} 吃牌`;
@@ -1187,6 +1241,8 @@ struct GamePage {
         animationText = '杠！';
         animationColor = '#f39c12';
         this.playSound('kong');
+        // 杠牌后手牌-3（移除3-4张，摸1张，净-2或-3）
+        // 客户端不需要手动更新，等待服务器同步
         break;
       case 'WIN':
         message = `${playerName} 胡牌！`;
@@ -1320,6 +1376,10 @@ struct GamePage {
           const localGame = gameManager.getLocalGame();
           if (localGame && localGame.isGameEnded()) {
             this.handleLocalGameEnd();
+            // 确保显示游戏结束弹窗
+            setTimeout(() => {
+              this.showGameOver = true;
+            }, 500);
             this.showOperationPanel = false;
             this.availableActions = [];
             return;
@@ -1339,8 +1399,13 @@ struct GamePage {
     if (this.gameState.isSinglePlayer) {
       const localGame = gameManager.getLocalGame();
       if (localGame && !localGame.isGameEnded()) {
-        // 碰/杠后人类成为当前玩家，需要出牌（已摸牌在手）
-        this.updateGameStatus();
+        // 碰/杠后需要同步状态并刷新UI
+        gameManager.syncLocalStateToUI();
+        gameManager.syncAIHands();
+        // 强制触发UI更新
+        setTimeout(() => {
+          this.updateGameStatus();
+        }, 100);
       }
     }
   }
@@ -1373,17 +1438,65 @@ struct GamePage {
 
   // 判断是否需要出牌（而非摸牌）
   private needDiscard(): boolean {
-    // 单机模式：通过引擎 lastAction 判断玩家是否已摸牌（需要出牌）
+    // 单机模式：优先从引擎获取最新的 lastAction，避免状态同步延迟问题
+    if (this.gameState.isSinglePlayer) {
+      const localGame = gameManager.getLocalGame();
+      if (localGame) {
+        const engineState = localGame.getState();
+        const engineLastAction = engineState.lastAction;
+        const mySeat = this.gameState.seat;
+        
+        console.info(`needDiscard (engine): lastAction=${JSON.stringify(engineLastAction)}, mySeat=${mySeat}, handLength=${this.gameState.myHand.length}`);
+        
+        // 只有当前玩家是lastAction的执行者，且手牌数量不是标准待摸牌状态时才需要出牌
+        if (engineLastAction && engineLastAction.player === mySeat) {
+          if (engineLastAction.action === 'DRAW' || engineLastAction.action === 'PONG' ||
+              engineLastAction.action === 'KONG' || engineLastAction.action === 'CHOW') {
+            // 正常情况：摸牌后14张需出牌
+            // 碰/吃后：11张需出牌（碰掉2张+别人1张，不补牌）
+            // 杠后：9-10张需出牌
+            if (this.gameState.myHand.length === 14 || this.gameState.myHand.length === 11 || 
+                this.gameState.myHand.length < 10) {
+              console.info(`needDiscard: true (engine lastAction matched, handLength=${this.gameState.myHand.length})`);
+              return true;
+            }
+          }
+        }
+      }
+    }
+    
+    // 兜底：使用 gameState 的 lastAction
     const lastAction = this.gameState.lastAction;
-    if (lastAction && lastAction.player === this.gameState.seat) {
+    const mySeat = this.gameState.seat;
+    
+    console.info(`needDiscard (gameState): lastAction=${JSON.stringify(lastAction)}, mySeat=${mySeat}, handLength=${this.gameState.myHand.length}`);
+    
+    if (lastAction && lastAction.player === mySeat) {
       if (lastAction.action === 'DRAW' || lastAction.action === 'PONG' ||
           lastAction.action === 'KONG' || lastAction.action === 'CHOW') {
-        return true;
+        // 正常情况：摸牌后14张需出牌
+        // 碰/吃后：11张需出牌（碰掉2张+别人1张，不补牌）
+        // 杠后：9-10张需出牌
+        if (this.gameState.myHand.length === 14 || this.gameState.myHand.length === 11 || 
+            this.gameState.myHand.length < 10) {
+          console.info(`needDiscard: true (gameState lastAction matched, handLength=${this.gameState.myHand.length})`);
+          return true;
+        }
       }
     }
 
     // 兜底：手牌达到14张时必须出牌
-    return this.gameState.myHand.length >= 14;
+    const result = this.gameState.myHand.length >= 14;
+    console.info(`needDiscard: ${result} (fallback, handLength=${this.gameState.myHand.length})`);
+    return result;
+  }
+
+  // 判断是否是碰/杠后（引擎已自动摸牌）
+  private isAfterPongOrKong(): boolean {
+    const lastAction = this.gameState.lastAction;
+    return lastAction !== undefined && 
+           lastAction.player === this.gameState.seat &&
+           (lastAction.action === 'PONG' || lastAction.action === 'KONG');
   }
 
   // 获取动作显示文本

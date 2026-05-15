@@ -426,6 +426,12 @@ class GameManager {
     this.notifySubscribers();
   }
 
+  // 多人模式：更新对手手牌数量（服务器同步）
+  updateOpponentHandCount(seat: number, count: number): void {
+    this.multiplayerHandCounts.set(seat, count);
+    this.notifySubscribers();
+  }
+
   // ==================== 多人模式本地动作更新 ====================
 
   // 多人模式：碰牌 - 从手牌移除2张，添加碰牌组
